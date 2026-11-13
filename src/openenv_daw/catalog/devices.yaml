@@ -1,0 +1,68 @@
+# Canonical, DAW-agnostic device catalog. `daw_ids` is reserved for future adapters
+# (e.g. ableton: "Operator", reaper: "ReaSynth", bitwig: <uuid>, ardour: <uri>).
+# Params: normalized 0..1 in the API; `min`/`max`/`scale`/`unit` give the display value.
+devices:
+  simple_synth:
+    role: instrument
+    description: Basic subtractive synth (one oscillator, low-pass filter, amp envelope).
+    daw_ids: {}
+    params:
+      waveform: {default: 0.0, min: 0, max: 3, scale: steps, unit: "", steps: [saw, square, sine, triangle]}
+      cutoff: {default: 0.8, min: 20, max: 20000, scale: log, unit: Hz}
+      resonance: {default: 0.1, min: 0, max: 100, scale: linear, unit: "%"}
+      attack: {default: 0.05, min: 1, max: 2000, scale: log, unit: ms}
+      release: {default: 0.3, min: 5, max: 5000, scale: log, unit: ms}
+      detune: {default: 0.0, min: 0, max: 50, scale: linear, unit: cents}
+  drum_kit:
+    role: instrument
+    description: General MIDI style drum kit (kick 36, snare 38, closed hat 42, open hat 46, clap 39).
+    daw_ids: {}
+    params:
+      kick_level: {default: 0.8, min: -60, max: 6, scale: linear, unit: dB}
+      snare_level: {default: 0.8, min: -60, max: 6, scale: linear, unit: dB}
+      hat_level: {default: 0.7, min: -60, max: 6, scale: linear, unit: dB}
+      decay: {default: 0.5, min: 50, max: 2000, scale: log, unit: ms}
+  eq:
+    role: audio_fx
+    description: Three-band equalizer (low shelf, mid bell, high shelf).
+    daw_ids: {}
+    params:
+      low_gain: {default: 0.5, min: -15, max: 15, scale: linear, unit: dB}
+      mid_gain: {default: 0.5, min: -15, max: 15, scale: linear, unit: dB}
+      mid_freq: {default: 0.5, min: 200, max: 8000, scale: log, unit: Hz}
+      high_gain: {default: 0.5, min: -15, max: 15, scale: linear, unit: dB}
+  compressor:
+    role: audio_fx
+    description: Feed-forward compressor.
+    daw_ids: {}
+    params:
+      threshold: {default: 0.7, min: -60, max: 0, scale: linear, unit: dB}
+      ratio: {default: 0.2, min: 1, max: 20, scale: linear, unit: ":1"}
+      attack: {default: 0.3, min: 0.1, max: 200, scale: log, unit: ms}
+      release: {default: 0.5, min: 10, max: 2000, scale: log, unit: ms}
+      makeup: {default: 0.0, min: 0, max: 24, scale: linear, unit: dB}
+  reverb:
+    role: audio_fx
+    description: Algorithmic reverb, normally placed on a return track.
+    daw_ids: {}
+    params:
+      size: {default: 0.5, min: 0, max: 100, scale: linear, unit: "%"}
+      decay: {default: 0.4, min: 0.1, max: 10, scale: log, unit: s}
+      mix: {default: 0.3, min: 0, max: 100, scale: linear, unit: "%"}
+      predelay: {default: 0.1, min: 0, max: 200, scale: linear, unit: ms}
+  delay:
+    role: audio_fx
+    description: Stereo delay.
+    daw_ids: {}
+    params:
+      time: {default: 0.5, min: 1, max: 2000, scale: log, unit: ms}
+      feedback: {default: 0.3, min: 0, max: 95, scale: linear, unit: "%"}
+      mix: {default: 0.3, min: 0, max: 100, scale: linear, unit: "%"}
+  limiter:
+    role: audio_fx
+    description: Brickwall limiter.
+    daw_ids: {}
+    params:
+      ceiling: {default: 0.9, min: -12, max: 0, scale: linear, unit: dB}
+      gain: {default: 0.0, min: 0, max: 24, scale: linear, unit: dB}
+      release: {default: 0.4, min: 10, max: 1000, scale: log, unit: ms}
