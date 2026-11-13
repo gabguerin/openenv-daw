@@ -24,9 +24,13 @@ async def test_call_roundtrip_and_error_result(server):
     async with Client(mcp) as c:
         r = await c.call_tool("create_track", {"name": "Lead", "kind": "midi"})
         assert r.data["ok"] and r.data["track"]["id"] == "trk_1"
-        await c.call_tool("create_midi_clip", {"track": "Lead", "start_beat": 0, "length_beats": 4, "name": "m"})
-        r = await c.call_tool("insert_midi_notes", {"clip": "m", "notes": [
-            {"pitch": 60, "start_beat": 0, "duration_beats": 1}]})
+        await c.call_tool(
+            "create_midi_clip", {"track": "Lead", "start_beat": 0, "length_beats": 4, "name": "m"}
+        )
+        r = await c.call_tool(
+            "insert_midi_notes",
+            {"clip": "m", "notes": [{"pitch": 60, "start_beat": 0, "duration_beats": 1}]},
+        )
         assert r.data["note_count"] == 1
         bad = await c.call_tool("delete_track", {"track": "nope"})
         assert bad.data["ok"] is False and bad.data["error"]["code"] == "not_found"

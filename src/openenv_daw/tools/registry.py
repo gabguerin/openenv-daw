@@ -114,7 +114,10 @@ def build_server(
             name: Optional clip name.
         """
         return call(
-            "create_midi_clip", track=track, start_beat=start_beat, length_beats=length_beats,
+            "create_midi_clip",
+            track=track,
+            start_beat=start_beat,
+            length_beats=length_beats,
             name=name,
         )
 
@@ -140,7 +143,9 @@ def build_server(
 
     @tool
     def remove_midi_notes(
-        clip: str, pitch: int | None = None, start_beat: float | None = None,
+        clip: str,
+        pitch: int | None = None,
+        start_beat: float | None = None,
         end_beat: float | None = None,
     ) -> Result:
         """Remove notes from a clip that match all given filters. With no filters, removes all.
@@ -157,8 +162,11 @@ def build_server(
 
     @tool
     def set_mixer_channel(
-        track: str, volume_db: float | None = None, pan: float | None = None,
-        mute: bool | None = None, solo: bool | None = None,
+        track: str,
+        volume_db: float | None = None,
+        pan: float | None = None,
+        mute: bool | None = None,
+        solo: bool | None = None,
     ) -> Result:
         """Set a track's fader, pan, mute and/or solo. Omitted fields stay unchanged.
 
@@ -169,8 +177,9 @@ def build_server(
             mute: Mute the track.
             solo: Solo the track (non-exclusive).
         """
-        return call("set_mixer_channel", track=track, volume_db=volume_db, pan=pan, mute=mute,
-                    solo=solo)
+        return call(
+            "set_mixer_channel", track=track, volume_db=volume_db, pan=pan, mute=mute, solo=solo
+        )
 
     @tool
     def set_send(track: str, return_track: str, level_db: float) -> Result:

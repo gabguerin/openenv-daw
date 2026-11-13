@@ -1,0 +1,15 @@
+family: session_setup
+weight: 0.20
+slots:
+  bpm: {train: [90, 100, 110, 120, 128, 140], heldout: [85, 95, 105, 115, 125, 135]}
+  ts: {train: ["4/4", "3/4", "6/8"], heldout: ["5/4", "7/8", "2/4"]}
+  names:
+    train: [Drums, Bass, Lead, Pad, Vocals, Keys, Guitar]
+    heldout: [Kick, Sub, Arp, Strings, Piano, Perc, Pluck]
+templates:
+  - {id: t1, split: train, text: "Set the tempo to {bpm} BPM and create MIDI tracks named {names}."}
+  - {id: t2, split: train, text: "Make the project {ts} at {bpm} BPM."}
+  - {id: t3, split: train, text: "I need MIDI tracks for {names}. Set the time signature to {ts} too."}
+  - {id: t4, split: train, text: "Set up a new session: {bpm} BPM, {ts}, with MIDI tracks {names}."}
+  - {id: h1, split: heldout, text: "Please change the tempo to {bpm} and add one MIDI track each for {names}."}
+  - {id: h2, split: heldout, text: "Switch the time signature to {ts} and set {bpm} beats per minute."}

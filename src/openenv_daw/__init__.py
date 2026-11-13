@@ -1,2 +1,3 @@
-def hello() -> str:
-    return "Hello from openenv-daw!"
+"""openenv-daw: an OpenEnv environment for DAW tool use."""
+
+__version__ = "0.1.0"

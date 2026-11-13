@@ -1,0 +1,212 @@
+"""Declarative state checks over a Session (ported in spirit from ableton-sidekick checkers,
+re-keyed from scene slots to timeline clips). Tracks are referenced by name or id."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+
+from openenv_daw.music import scale_classes
+from openenv_daw.schema import Session, Track
+
+CheckFn = Callable[[Session, Session, dict[str, Any]], bool]
+CHECKS: dict[str, CheckFn] = {}
+
+
+def check(fn: CheckFn) -> CheckFn:
+    CHECKS[fn.__name__] = fn
+    return fn
+
+
+def _track(s: Session, ref: str) -> Track | None:
+    for t in s.tracks:
+        if t.id == ref or t.name.lower() == str(ref).lower():
+            return t
+    return None
+
+
+def _notes(t: Track) -> list[Any]:
+    return [n for c in t.clips for n in c.notes]
+
+
+def _abs_notes(t: Track) -> list[tuple[float, Any]]:
+    return [(c.start_beat + n.start_beat, n) for c in t.clips for n in c.notes]
+
+
+@check
+def tempo_is(s, i, a):
+    return abs(s.tempo_bpm - a["bpm"]) <= a.get("tol", 0.5)
+
+
+@check
+def time_signature_is(s, i, a):
+    return tuple(s.time_signature) == (a["numerator"], a["denominator"])
+
+
+@check
+def track_exists(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and (a.get("kind") is None or t.kind == a["kind"])
+
+
+@check
+def track_absent(s, i, a):
+    return _track(s, a["track"]) is None
+
+
+@check
+def track_count(s, i, a):
+    kind = a.get("kind")
+    return sum(1 for t in s.tracks if kind is None or t.kind == kind) == a["n"]
+
+
+@check
+def has_device(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and any(d.device == a["device"] for d in t.devices)
+
+
+@check
+def device_param_in(s, i, a):
+    t = _track(s, a["track"])
+    if t is None:
+        return False
+    return any(
+        d.device == a["device"] and a["min"] <= d.params.get(a["param"], -1) <= a["max"]
+        for d in t.devices
+    )
+
+
+@check
+def clip_count(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and len(t.clips) == a["n"]
+
+
+@check
+def clip_at(s, i, a):
+    t = _track(s, a["track"])
+    if t is None:
+        return False
+    return any(
+        abs(c.start_beat - a["start_beat"]) < 1e-6
+        and (a.get("length_beats") is None or abs(c.length_beats - a["length_beats"]) < 1e-6)
+        for c in t.clips
+    )
+
+
+@check
+def note_count_at_least(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and len(_notes(t)) >= a["n"]
+
+
+@check
+def note_count_is(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and len(_notes(t)) == a["n"]
+
+
+@check
+def notes_in_key(s, i, a):
+    t = _track(s, a["track"])
+    ns = _notes(t) if t else []
+    ok = set(scale_classes(a["key"]))
+    return bool(ns) and all(n.pitch % 12 in ok for n in ns)
+
+
+@check
+def notes_pitch_range(s, i, a):
+    t = _track(s, a["track"])
+    ns = _notes(t) if t else []
+    return bool(ns) and all(a["min"] <= n.pitch <= a["max"] for n in ns)
+
+
+@check
+def notes_monophonic(s, i, a):
+    t = _track(s, a["track"])
+    ns = sorted(_abs_notes(t) if t else [], key=lambda x: x[0])
+    if not ns:
+        return False
+    return all(
+        ns[k][0] + ns[k][1].duration_beats <= ns[k + 1][0] + 1e-6 for k in range(len(ns) - 1)
+    )
+
+
+@check
+def hits_on_beats(s, i, a):
+    """Every listed absolute beat has a note of ``pitch`` starting within ``tol`` of it."""
+    t = _track(s, a["track"])
+    if t is None:
+        return False
+    starts = [b for b, n in _abs_notes(t) if n.pitch == a["pitch"]]
+    tol = a.get("tol", 1e-6)
+    return all(any(abs(b - x) <= tol for x in starts) for b in a["beats"])
+
+
+@check
+def no_notes_of_pitch_off_beats(s, i, a):
+    """Notes of ``pitch`` only start on the listed beats."""
+    t = _track(s, a["track"])
+    if t is None:
+        return False
+    return all(
+        any(abs(b - x) <= 1e-6 for x in a["beats"])
+        for b, n in _abs_notes(t)
+        if n.pitch == a["pitch"]
+    )
+
+
+@check
+def volume_in(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and a["min"] <= t.volume_db <= a["max"]
+
+
+@check
+def pan_in(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and a["min"] <= t.pan <= a["max"]
+
+
+@check
+def mute_is(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and t.mute == a["value"]
+
+
+@check
+def solo_is(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and t.solo == a["value"]
+
+
+@check
+def louder_than(s, i, a):
+    t, o = _track(s, a["track"]), _track(s, a["other"])
+    return t is not None and o is not None and t.volume_db >= o.volume_db + a.get("margin_db", 0.1)
+
+
+@check
+def no_fader_above(s, i, a):
+    return all(t.volume_db <= a["db"] for t in s.tracks)
+
+
+@check
+def send_in(s, i, a):
+    t, r = _track(s, a["track"]), _track(s, a["return_track"])
+    if t is None or r is None:
+        return False
+    return a["min"] <= t.sends.get(r.id, -70.0) <= a["max"]
+
+
+@check
+def state_unchanged(s, i, a):
+    return s.snapshot() == i.snapshot()
+
+
+def run_check(kind: str, session: Session, initial: Session, args: dict[str, Any]) -> bool:
+    fn = CHECKS.get(kind)
+    if fn is None:
+        raise KeyError(f"unknown check kind {kind!r}")
+    return bool(fn(session, initial, args))

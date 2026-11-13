@@ -1,0 +1,11 @@
+family: four_on_floor_beat
+weight: 0.20
+slots:
+  bars: {train: [1, 2, 4], heldout: [3, 5]}
+  track: {train: [Drums, Beat, Kit], heldout: [Percussion, Groove, Rhythm]}
+  hat_clause: {train: ["", ", and closed hats on every 8th note"], heldout: [" with closed hats on every 8th note"]}
+  bpm: {train: [120, 124, 128, 130], heldout: [122, 126]}
+templates:
+  - {id: t1, split: train, text: "Create a drum track named {track} with a drum_kit and program a {bars}-bar four-on-the-floor beat: kick on every beat{hat_clause}."}
+  - {id: t2, split: train, text: "Make a {bars}-bar house beat on a new drum_kit track called {track}. Kick on every beat{hat_clause}. Set the tempo to {bpm}."}
+  - {id: h1, split: heldout, text: "Add a MIDI drum track {track} using drum_kit; the kick should hit on each quarter note for {bars} bars{hat_clause}."}

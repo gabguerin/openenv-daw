@@ -32,15 +32,40 @@ def test_notes_snap_bounds_overlap():
     b = SimBackend()
     call(b, "create_track", name="Lead", kind="midi")
     call(b, "create_midi_clip", track="Lead", start_beat=0, length_beats=4, name="m")
-    r = call(b, "insert_midi_notes", clip="m", notes=[
-        {"pitch": 60, "start_beat": 0.26, "duration_beats": 0.5, "velocity": 90}])
+    r = call(
+        b,
+        "insert_midi_notes",
+        clip="m",
+        notes=[{"pitch": 60, "start_beat": 0.26, "duration_beats": 0.5, "velocity": 90}],
+    )
     assert r["added"][0]["start_beat"] == 0.25
-    assert call(b, "insert_midi_notes", clip="m", notes=[
-        {"pitch": 60, "start_beat": 0.5, "duration_beats": 0.5}])["error"]["code"] == "conflict"
-    assert call(b, "insert_midi_notes", clip="m", notes=[
-        {"pitch": 61, "start_beat": 3.75, "duration_beats": 1}])["error"]["code"] == "invalid_args"
-    assert call(b, "insert_midi_notes", clip="m", notes=[
-        {"pitch": 200, "start_beat": 0, "duration_beats": 1}])["error"]["code"] == "invalid_args"
+    assert (
+        call(
+            b,
+            "insert_midi_notes",
+            clip="m",
+            notes=[{"pitch": 60, "start_beat": 0.5, "duration_beats": 0.5}],
+        )["error"]["code"]
+        == "conflict"
+    )
+    assert (
+        call(
+            b,
+            "insert_midi_notes",
+            clip="m",
+            notes=[{"pitch": 61, "start_beat": 3.75, "duration_beats": 1}],
+        )["error"]["code"]
+        == "invalid_args"
+    )
+    assert (
+        call(
+            b,
+            "insert_midi_notes",
+            clip="m",
+            notes=[{"pitch": 200, "start_beat": 0, "duration_beats": 1}],
+        )["error"]["code"]
+        == "invalid_args"
+    )
     rm = call(b, "remove_midi_notes", clip="m", pitch=60)
     assert rm["removed"] == 1 and rm["note_count"] == 0
 
@@ -58,7 +83,10 @@ def test_mixer_sends_devices():
     assert call(b, "insert_device", track="Verb", device="reverb")["ok"]
     p = call(b, "set_device_param", track="Verb", device="reverb", param="mix", value=0.5)
     assert p["param"]["display"] == "50 %"
-    assert call(b, "set_device_param", track="Verb", device="reverb", param="nope", value=0.5)["ok"] is False
+    assert (
+        call(b, "set_device_param", track="Verb", device="reverb", param="nope", value=0.5)["ok"]
+        is False
+    )
     assert call(b, "delete_track", track="Verb")["ok"]
     assert call(b, "get_session", track="Lead")["track"]["sends"] == {}
 

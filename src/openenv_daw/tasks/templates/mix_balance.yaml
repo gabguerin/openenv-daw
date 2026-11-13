@@ -1,0 +1,11 @@
+family: mix_balance
+weight: 0.10
+slots:
+  names: {train: [Drums, Bass, Lead, Pad, Vocals], heldout: [Keys, Strings, Perc, Sub, Guitar]}
+  db_a: {train: [-18, -12, -9, -6, -3], heldout: [-15, -8, -4]}
+  side: {train: [left, right], heldout: [left, right]}
+templates:
+  - {id: t1, split: train, text: "Set {track_a} to {db_a} dB, pan {pan_track} hard {side}, and mute {mute_track}."}
+  - {id: t2, split: train, text: "Turn {track_a} down to {db_a} dB and pan {pan_track} fully {side}."}
+  - {id: t3, split: train, text: "Mute {mute_track} and pan {pan_track} all the way {side}."}
+  - {id: h1, split: heldout, text: "Bring the level of {track_a} to {db_a} dB; also mute {mute_track} and pan {pan_track} hard {side}."}

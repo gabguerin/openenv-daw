@@ -108,8 +108,13 @@ def param_infos(d: Device, query: str | None = None) -> list[dict[str, Any]]:
             continue
         val = d.params.get(name, ps.default)
         out.append(
-            {"name": name, "value": round(val, 4), "display": ps.display(val),
-             "default": ps.default, "unit": ps.unit}
+            {
+                "name": name,
+                "value": round(val, 4),
+                "display": ps.display(val),
+                "default": ps.default,
+                "unit": ps.unit,
+            }
         )
     return out
 
@@ -133,7 +138,9 @@ def track_view(t: Track, detail: bool = True, notes: bool = False) -> dict[str, 
 # --- operations -----------------------------------------------------------------------------
 
 
-def get_session(s: Session, track: str | None = None, include_notes: bool = False) -> dict[str, Any]:
+def get_session(
+    s: Session, track: str | None = None, include_notes: bool = False
+) -> dict[str, Any]:
     if track is not None:
         t = find_track(s, track)
         return {"ok": True, "track": track_view(t, detail=True, notes=include_notes)}
@@ -146,7 +153,9 @@ def get_session(s: Session, track: str | None = None, include_notes: bool = Fals
 
 
 def set_transport(
-    s: Session, tempo_bpm: float | None = None, time_signature: tuple[int, int] | list[int] | None = None
+    s: Session,
+    tempo_bpm: float | None = None,
+    time_signature: tuple[int, int] | list[int] | None = None,
 ) -> dict[str, Any]:
     if tempo_bpm is None and time_signature is None:
         raise invalid("provide tempo_bpm and/or time_signature")
@@ -209,11 +218,19 @@ def create_midi_clip(
                 f"clip would overlap {c.name!r} ({c.id}) at beats {c.start_beat}..{c.end_beat}"
             )
     cid = s.next_id("clp")
-    clip = Clip(id=cid, name=(name or f"Clip {cid.split('_')[1]}").strip(), start_beat=start,
-                length_beats=length)
+    clip = Clip(
+        id=cid,
+        name=(name or f"Clip {cid.split('_')[1]}").strip(),
+        start_beat=start,
+        length_beats=length,
+    )
     t.clips.append(clip)
     t.clips.sort(key=lambda c: c.start_beat)
-    return {"ok": True, "clip": clip_view(clip, t), "snapped": (start, length) != (start_beat, length_beats)}
+    return {
+        "ok": True,
+        "clip": clip_view(clip, t),
+        "snapped": (start, length) != (start_beat, length_beats),
+    }
 
 
 def delete_clip(s: Session, clip: str) -> dict[str, Any]:
@@ -252,8 +269,10 @@ def insert_midi_notes(s: Session, clip: str, notes: list[dict[str, Any]]) -> dic
     existing = list(c.notes)
     for n in new:
         for o in existing:
-            if o.pitch == n.pitch and n.start_beat < o.start_beat + o.duration_beats and (
-                o.start_beat < n.start_beat + n.duration_beats
+            if (
+                o.pitch == n.pitch
+                and n.start_beat < o.start_beat + o.duration_beats
+                and (o.start_beat < n.start_beat + n.duration_beats)
             ):
                 raise conflict(
                     f"pitch {n.pitch} at beat {n.start_beat} overlaps an existing note of the same pitch"
@@ -269,7 +288,10 @@ def insert_midi_notes(s: Session, clip: str, notes: list[dict[str, Any]]) -> dic
 
 
 def remove_midi_notes(
-    s: Session, clip: str, pitch: int | None = None, start_beat: float | None = None,
+    s: Session,
+    clip: str,
+    pitch: int | None = None,
+    start_beat: float | None = None,
     end_beat: float | None = None,
 ) -> dict[str, Any]:
     _, c = find_clip(s, clip)
@@ -289,8 +311,12 @@ def remove_midi_notes(
 
 
 def set_mixer_channel(
-    s: Session, track: str, volume_db: float | None = None, pan: float | None = None,
-    mute: bool | None = None, solo: bool | None = None,
+    s: Session,
+    track: str,
+    volume_db: float | None = None,
+    pan: float | None = None,
+    mute: bool | None = None,
+    solo: bool | None = None,
 ) -> dict[str, Any]:
     t = find_track(s, track)
     if volume_db is None and pan is None and mute is None and solo is None:
@@ -303,8 +329,17 @@ def set_mixer_channel(
         t.mute = bool(mute)
     if solo is not None:
         t.solo = bool(solo)
-    return {"ok": True, "track": {"id": t.id, "name": t.name, "volume_db": t.volume_db,
-                                  "pan": t.pan, "mute": t.mute, "solo": t.solo}}
+    return {
+        "ok": True,
+        "track": {
+            "id": t.id,
+            "name": t.name,
+            "volume_db": t.volume_db,
+            "pan": t.pan,
+            "mute": t.mute,
+            "solo": t.solo,
+        },
+    }
 
 
 def set_send(s: Session, track: str, return_track: str, level_db: float) -> dict[str, Any]:
@@ -333,7 +368,9 @@ def list_devices(s: Session, role: str | None = None) -> dict[str, Any]:
     return {"ok": True, "devices": devs}
 
 
-def insert_device(s: Session, track: str, device: str, position: int | None = None) -> dict[str, Any]:
+def insert_device(
+    s: Session, track: str, device: str, position: int | None = None
+) -> dict[str, Any]:
     t = find_track(s, track)
     spec: DeviceSpec | None = load_catalog().get(device)
     if spec is None:
@@ -350,20 +387,27 @@ def insert_device(s: Session, track: str, device: str, position: int | None = No
         pos = len(t.devices) if position is None else int(position)
         pos = int(clamp(pos, n_instr, len(t.devices)))
     dev = Device(
-        id=s.next_id("dev"), device=spec.id, name=spec.id, role=spec.role,  # type: ignore[arg-type]
+        id=s.next_id("dev"),
+        device=spec.id,
+        name=spec.id,
+        role=spec.role,  # type: ignore[arg-type]
         params={n: p.default for n, p in spec.params.items()},
     )
     t.devices.insert(pos, dev)
     return {"ok": True, "track": t.id, "position": pos, "device": device_view(dev, params=True)}
 
 
-def get_device_params(s: Session, track: str, device: str, query: str | None = None) -> dict[str, Any]:
+def get_device_params(
+    s: Session, track: str, device: str, query: str | None = None
+) -> dict[str, Any]:
     t = find_track(s, track)
     d = find_device(t, device)
     return {"ok": True, "track": t.id, "device": d.id, "params": param_infos(d, query)}
 
 
-def set_device_param(s: Session, track: str, device: str, param: str, value: float) -> dict[str, Any]:
+def set_device_param(
+    s: Session, track: str, device: str, param: str, value: float
+) -> dict[str, Any]:
     t = find_track(s, track)
     d = find_device(t, device)
     spec = load_catalog()[d.device]
@@ -373,8 +417,12 @@ def set_device_param(s: Session, track: str, device: str, param: str, value: flo
     if not 0.0 <= float(value) <= 1.0:
         raise invalid("value must be normalized within 0..1")
     d.params[match[0]] = round(float(value), 4)
-    return {"ok": True, "track": t.id, "device": d.id,
-            "param": next(p for p in param_infos(d) if p["name"] == match[0])}
+    return {
+        "ok": True,
+        "track": t.id,
+        "device": d.id,
+        "param": next(p for p in param_infos(d) if p["name"] == match[0]),
+    }
 
 
 def unsupported_op(name: str) -> dict[str, Any]:

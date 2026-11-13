@@ -13,9 +13,20 @@ from openenv_daw.sim.profiles import DEFAULT_PROFILE, check_allowed
 _OPS: dict[str, Callable[..., dict[str, Any]]] = {
     name: getattr(ops, name)
     for name in (
-        "get_session", "set_transport", "create_track", "delete_track", "rename_track",
-        "create_midi_clip", "delete_clip", "insert_midi_notes", "remove_midi_notes",
-        "set_mixer_channel", "set_send", "list_devices", "insert_device", "get_device_params",
+        "get_session",
+        "set_transport",
+        "create_track",
+        "delete_track",
+        "rename_track",
+        "create_midi_clip",
+        "delete_clip",
+        "insert_midi_notes",
+        "remove_midi_notes",
+        "set_mixer_channel",
+        "set_send",
+        "list_devices",
+        "insert_device",
+        "get_device_params",
         "set_device_param",
     )
 }
