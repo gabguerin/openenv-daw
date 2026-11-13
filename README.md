@@ -16,12 +16,21 @@ is needed: the simulator is pure Python and deterministic.
 - **Environment** (`DawEnvironment`, an OpenEnv `MCPEnvironment`): one request per episode.
   The reset observation is the request text only; the agent must call `get_session`. Episodes end
   on `submit`, after 30 steps, or after 3 consecutive errors. A verified step log is kept.
-- **Reward**: any failed critical check (or a wrong submit status) gives 0; otherwise the
-  fraction of remaining checks passed, minus a penalty for changing untouchable objects
-  (0.15 each, cap 0.5) and per tool error (0.02 each, cap 0.2). `metadata["success"]` is binary.
+- **Reward**: `submit` is required (no submit scores 0). Any failed critical check (or a wrong
+  submit status) gives 0; otherwise the fraction of remaining checks passed, minus a penalty for
+  changing untouchable objects or adding extraneous ones (new tracks or devices the task did not
+  list in `allowed_new`, solo, a new fader above 0 dB: 0.15 each, shared cap 0.5) and per tool
+  error (0.02 each, cap 0.2). `metadata["success"]` is binary.
+- **Profiles**: `portable` and `mixer_only` map to tools and capability tags. Tasks declare
+  `requires` (tool names plus tags such as `group_tracks`, `automation`, `third_party_plugin`,
+  `render`); `resolve_for_profile(task, profile)` turns a task whose requirements are not covered
+  into a "blocked" one, so the JSONL stays profile-neutral. `TaskStore.sample/get` take a profile.
+- **Foreign objects**: about 20% of tasks start with a read-only group track holding a foreign
+  plugin and audio/session clips; they are readable, any mutation returns `unsupported`, and
+  changing them is scored as damage.
 - **Tasks**: 5 seeded families (`session_setup`, `melody_in_key`, `four_on_floor_beat`,
-  `reverb_send`, `mix_balance`) plus about 10% infeasible requests (`submit("blocked")`).
-  Train tasks are generated from seeds; `heldout.jsonl` uses unseen templates and slot values.
+  `reverb_send`, `mix_balance`), feasible `near_miss` requests that mention infeasible-sounding words, plus about 10% infeasible requests (`submit("blocked")`).
+  Train tasks are generated from seeds; `heldout_v2.jsonl` (default; `OPENENV_DAW_HELDOUT` selects another file, `heldout.jsonl` is v1) uses unseen templates and slot values.
   Every task carries an oracle solution.
 
 ## Run

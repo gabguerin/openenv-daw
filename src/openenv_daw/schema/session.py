@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-TrackKind = Literal["midi", "audio", "return"]
+TrackKind = Literal["midi", "audio", "return", "group"]  # group: read-only (foreign)
 
 
 class Note(BaseModel):
@@ -39,6 +39,30 @@ class Device(BaseModel):
     params: dict[str, float] = Field(default_factory=dict)  # normalized 0..1
 
 
+class ForeignParam(BaseModel):
+    name: str
+    display: str
+
+
+class ForeignDevice(BaseModel):
+    """A device the catalog does not know (third-party plugin, unmapped native device).
+    Readable, never writable."""
+
+    id: str
+    name: str
+    params: list[ForeignParam] = Field(default_factory=list)
+
+
+class ForeignClip(BaseModel):
+    """An audio or session clip the simulator cannot edit. Readable, never writable."""
+
+    id: str
+    name: str
+    kind: Literal["audio", "session"]
+    start_beat: float = 0.0
+    length_beats: float = 0.0
+
+
 class Track(BaseModel):
     id: str
     name: str
@@ -50,6 +74,8 @@ class Track(BaseModel):
     mute: bool = False
     solo: bool = False
     sends: dict[str, float] = Field(default_factory=dict)  # return track id -> dB (absent = off)
+    foreign_devices: list[ForeignDevice] = Field(default_factory=list)
+    foreign_clips: list[ForeignClip] = Field(default_factory=list)
 
 
 class Session(BaseModel):
@@ -72,5 +98,10 @@ class Session(BaseModel):
         return cls.model_validate(copy.deepcopy(data))
 
     def state_hash(self) -> str:
-        blob = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        data = self.model_dump(mode="json")
+        for t in data["tracks"]:  # empty foreign fields are excluded: pre-foreign hashes stay valid
+            for k in ("foreign_devices", "foreign_clips"):
+                if not t[k]:
+                    del t[k]
+        blob = json.dumps(data, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode()).hexdigest()

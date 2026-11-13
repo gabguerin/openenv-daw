@@ -13,11 +13,12 @@ PER_FAMILY = {
     "four_on_floor_beat": 10,
     "reverb_send": 8,
     "mix_balance": 8,
+    "near_miss": 10,
     "infeasible": 10,
 }
 
 
-def main(out: str = "src/openenv_daw/tasks/heldout.jsonl") -> None:
+def main(out: str = "src/openenv_daw/tasks/heldout_v2.jsonl") -> None:
     seen: set[str] = set()
     lines = []
     for fam in families():

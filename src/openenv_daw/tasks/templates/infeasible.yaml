@@ -5,11 +5,11 @@ slots:
   group: {train: [Rhythm, Instruments, Bus A], heldout: [Stems, Group 1]}
   plugin: {train: [Serum, Massive, Kontakt, Omnisphere], heldout: [Vital, Pigments, Diva]}
 templates:
-  - {id: t1, split: train, text: "Group the {a} and {b} tracks into a folder called {group}."}
-  - {id: t2, split: train, text: "Draw a filter cutoff automation on {a} that rises over 8 bars."}
-  - {id: t3, split: train, text: "Route the output of {a} to a bus called {group}."}
-  - {id: t4, split: train, text: "Load the {plugin} plugin on {a}."}
-  - {id: t5, split: train, text: "Export the whole project as a WAV file."}
-  - {id: h1, split: heldout, text: "Put {a} and {b} in a track group named {group}."}
-  - {id: h2, split: heldout, text: "Please open {plugin} on the {a} track."}
-  - {id: h3, split: heldout, text: "Automate the volume of {a} to fade out over the last 4 bars."}
+  - {id: t1, requires: [group_tracks], split: train, text: "Group the {a} and {b} tracks into a folder called {group}."}
+  - {id: t2, requires: [automation], split: train, text: "Draw a filter cutoff automation on {a} that rises over 8 bars."}
+  - {id: t3, requires: [group_tracks], split: train, text: "Route the output of {a} to a bus called {group}."}
+  - {id: t4, requires: [third_party_plugin], split: train, text: "Load the {plugin} plugin on {a}."}
+  - {id: t5, requires: [render], split: train, text: "Export the whole project as a WAV file."}
+  - {id: h1, requires: [group_tracks], split: heldout, text: "Put {a} and {b} in a track group named {group}."}
+  - {id: h2, requires: [third_party_plugin], split: heldout, text: "Please open {plugin} on the {a} track."}
+  - {id: h3, requires: [automation], split: heldout, text: "Automate the volume of {a} to fade out over the last 4 bars."}

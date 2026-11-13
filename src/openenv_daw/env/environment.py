@@ -96,11 +96,11 @@ class DawEnvironment(MCPEnvironment):
         if profile is not None and profile != self.profile:
             raise ValueError("the profile is fixed per environment instance; start a new server")
         if task_id is not None:
-            task = self.store.get(task_id)
+            task = self.store.get(task_id, self.profile)
         elif index is not None:
-            task = self.store.get_task(split, index)
+            task = self.store.get_task(split, index, self.profile)
         else:
-            task = self.store.sample(split, seed or 0, family)
+            task = self.store.sample(split, seed or 0, family, self.profile)
         self.episode = Episode(task, self.profile, self.max_steps, self.max_consecutive_errors)
         self._reset_rubric()
         self._state = DawState(

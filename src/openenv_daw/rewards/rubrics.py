@@ -14,7 +14,7 @@ from openenv_daw.schema import Session
 from openenv_daw.tasks.model import Task
 
 from .checks import run_check
-from .damage import damage_violations
+from .damage import damage_violations, extraneous_violations
 
 ERROR_PENALTY = 0.02
 ERROR_PENALTY_CAP = 0.2
@@ -58,14 +58,15 @@ def score_episode(
     ]
     rest = [ok for c, ok in zip(task.checks, results, strict=True) if not c.critical]
     fraction = sum(rest) / len(rest) if rest else 1.0
-    violations = damage_violations(initial, final, task.touchable)
+    violations = damage_violations(initial, final, task.touchable) + extraneous_violations(
+        initial, final, task
+    )
     dmg_pen = min(DAMAGE_PENALTY_CAP, DAMAGE_PENALTY * len(violations))
     err_pen = min(ERROR_PENALTY_CAP, ERROR_PENALTY * error_count)
-    # The submit status is itself the answer to feasibility: a refusal of a feasible task, or
-    # an attempt at an infeasible one, scores 0. A missing submit (truncation) is only flagged.
-    status_wrong = status is not None and status != task.expected_status
-    if task.expected_status == "blocked" and status != "blocked":
-        status_wrong = True
+    # ``submit`` is required: its status is the answer to feasibility, so finishing the work
+    # without submitting, refusing a feasible task, or attempting an infeasible one scores 0.
+    # ``fraction`` is still reported for diagnostics.
+    status_wrong = status != task.expected_status
     gate = not critical_failed and not status_wrong
     reward = max(0.0, fraction - dmg_pen - err_pen) if gate else 0.0
     success = gate and all(results) and not violations and status == task.expected_status

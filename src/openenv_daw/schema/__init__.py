@@ -1,3 +1,23 @@
-from .session import Clip, Device, Note, Session, Track, TrackKind
+from .session import (
+    Clip,
+    Device,
+    ForeignClip,
+    ForeignDevice,
+    ForeignParam,
+    Note,
+    Session,
+    Track,
+    TrackKind,
+)
 
-__all__ = ["Clip", "Device", "Note", "Session", "Track", "TrackKind"]
+__all__ = [
+    "Clip",
+    "Device",
+    "ForeignClip",
+    "ForeignDevice",
+    "ForeignParam",
+    "Note",
+    "Session",
+    "Track",
+    "TrackKind",
+]

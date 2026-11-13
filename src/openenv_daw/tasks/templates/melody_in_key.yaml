@@ -7,8 +7,8 @@ slots:
   bars: {train: [1, 2, 4], heldout: [3, 8]}
   track: {train: [Lead, Melody, Synth, Keys], heldout: [Arp, Topline, Pluck]}
 templates:
-  - {id: t1, split: train, text: "Create a MIDI track called {track} with a simple_synth and write a {bars}-bar melody in {key}."}
-  - {id: t2, split: train, text: "Add a synth lead named {track} (use simple_synth) playing a {bars}-bar melody that stays in {key}."}
-  - {id: t3, split: train, text: "I want a {bars}-bar single-note melody in {key} on a new MIDI track {track}, with a simple_synth on it."}
-  - {id: h1, split: heldout, text: "Put together a {key} tune, {bars} bars long, on a new instrument track named {track}. Use the simple_synth."}
-  - {id: h2, split: heldout, text: "New MIDI track {track} + simple_synth, then a monophonic {bars}-bar melody using only notes from {key}."}
+  - {id: t1, split: train, text: "Create a MIDI track called {track} with a simple_synth and write a {bars}-bar melody in {key}. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}
+  - {id: t2, split: train, text: "Add a synth lead named {track} (use simple_synth) playing a {bars}-bar melody that stays in {key}. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}
+  - {id: t3, split: train, text: "I want a {bars}-bar single-note melody in {key} on a new MIDI track {track}, with a simple_synth on it. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}
+  - {id: h1, split: heldout, text: "Put together a {key} tune, {bars} bars long, on a new instrument track named {track}. Use the simple_synth. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}
+  - {id: h2, split: heldout, text: "New MIDI track {track} + simple_synth, then a monophonic {bars}-bar melody using only notes from {key}. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}

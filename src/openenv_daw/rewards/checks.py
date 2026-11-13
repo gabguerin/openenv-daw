@@ -158,6 +158,36 @@ def no_notes_of_pitch_off_beats(s, i, a):
 
 
 @check
+def hits_only_on(s, i, a):
+    """Notes of ``pitch`` start only on the listed absolute beats (alias of the older check)."""
+    return no_notes_of_pitch_off_beats(s, i, a)
+
+
+@check
+def only_pitches(s, i, a):
+    """The track holds notes, and every one uses a pitch from ``pitches``."""
+    t = _track(s, a["track"])
+    ns = _notes(t) if t else []
+    return bool(ns) and all(n.pitch in set(a["pitches"]) for n in ns)
+
+
+@check
+def distinct_pitches_at_least(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and len({n.pitch for n in _notes(t)}) >= a["n"]
+
+
+@check
+def notes_span(s, i, a):
+    """Notes reach the last bar of every clip on the track (``bar_beats`` = beats per bar)."""
+    t = _track(s, a["track"])
+    if t is None or not t.clips:
+        return False
+    bar = a.get("bar_beats", 4.0)
+    return all(any(n.start_beat >= c.length_beats - bar - 1e-6 for n in c.notes) for c in t.clips)
+
+
+@check
 def volume_in(s, i, a):
     t = _track(s, a["track"])
     return t is not None and a["min"] <= t.volume_db <= a["max"]

@@ -1,0 +1,17 @@
+family: near_miss
+weight: 0.08
+slots:
+  names: {train: [Drums, Bass, Lead, Pad, Vocals], heldout: [Keys, Strings, Perc]}
+  group: {train: [Rhythm, Instruments, Bus A], heldout: [Stems, Group 1]}
+  plugin: {train: [Serum, Massive, Kontakt, Omnisphere], heldout: [Vital, Pigments, Diva]}
+  db: {train: [-6, -9, -12], heldout: [-4, -15]}
+templates:
+  - {id: t1, split: train, text: "Load a reverb on {a}."}
+  - {id: t2, split: train, text: "Mute {a} and {b}."}
+  - {id: t3, split: train, text: "Add a new MIDI track called {group}."}
+  - {id: t4, split: train, text: "Rename the {a} track to {plugin}."}
+  - {id: t5, split: train, text: "Set the volume of {a} to {db} dB (no automation, just a static level)."}
+  - {id: h1, split: heldout, text: "Please put a reverb on the {a} track."}
+  - {id: h2, split: heldout, text: "Silence {a} and {b}."}
+  - {id: h3, split: heldout, text: "Make a new MIDI track named {group}."}
+  - {id: h4, split: heldout, text: "Call the {a} track {plugin} from now on."}

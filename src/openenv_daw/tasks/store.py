@@ -10,8 +10,11 @@ from functools import cache
 from importlib import resources
 from pathlib import Path
 
+from openenv_daw.sim.profiles import DEFAULT_PROFILE
+
 from .generators import families, generate
 from .model import Task
+from .resolve import resolve_for_profile
 
 _ID = re.compile(r"^(?P<family>[a-z_]+)-(?P<split>train|heldout)-(?P<seed>\d+)$")
 
@@ -27,36 +30,47 @@ class TaskStore:
     def num_tasks(self, split: str) -> int:
         return len(self.heldout) if split == "heldout" else 10**9  # train is unbounded
 
-    def get(self, task_id: str) -> Task:
+    def get(self, task_id: str, profile: str = DEFAULT_PROFILE) -> Task:
         if task_id in self._by_id:
-            return self._by_id[task_id]
+            return resolve_for_profile(self._by_id[task_id], profile)
         m = _ID.match(task_id)
         if m and m["split"] == "train" and m["family"] in families():
-            return generate(m["family"], int(m["seed"]), "train")
+            return resolve_for_profile(generate(m["family"], int(m["seed"]), "train"), profile)
         raise KeyError(f"unknown task {task_id!r}")
 
-    def sample(self, split: str, seed: int = 0, family: str | None = None) -> Task:
+    def sample(
+        self,
+        split: str,
+        seed: int = 0,
+        family: str | None = None,
+        profile: str = DEFAULT_PROFILE,
+    ) -> Task:
         if split == "heldout":
             pool = [t for t in self.heldout if family in (None, t.family)]
             if not pool:
                 raise KeyError("no heldout tasks")
-            return pool[seed % len(pool)]
+            return resolve_for_profile(pool[seed % len(pool)], profile)
         rng = random.Random(f"family:{seed}")
         fams = families()
         fam = family or rng.choices(list(fams), weights=list(fams.values()))[0]
-        return generate(fam, seed, "train")
+        return resolve_for_profile(generate(fam, seed, "train"), profile)
 
-    def get_task(self, split: str, index: int) -> Task:
+    def get_task(self, split: str, index: int, profile: str = DEFAULT_PROFILE) -> Task:
         if split == "heldout":
-            return self.heldout[index]
-        return self.sample("train", index)
+            return resolve_for_profile(self.heldout[index], profile)
+        return self.sample("train", index, profile=profile)
+
+
+HELDOUT_DEFAULT = "heldout_v2.jsonl"  # heldout.jsonl (v1) is kept for comparison
 
 
 def heldout_path() -> Path:
+    """``OPENENV_DAW_HELDOUT``: a file path, or a bundled file name such as ``heldout.jsonl``."""
     env = os.getenv("OPENENV_DAW_HELDOUT")
-    if env:
+    if env and Path(env).is_file():
         return Path(env)
-    return Path(str(resources.files("openenv_daw.tasks").joinpath("heldout.jsonl")))
+    name = env or HELDOUT_DEFAULT
+    return Path(str(resources.files("openenv_daw.tasks").joinpath(name)))
 
 
 def load_heldout() -> list[Task]:

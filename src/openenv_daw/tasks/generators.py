@@ -17,7 +17,10 @@ import yaml
 
 from openenv_daw.backends import SimBackend
 from openenv_daw.music import CLOSED_HAT, KICK, scale_pitches
+from openenv_daw.schema import Session, Track
+from openenv_daw.schema.session import ForeignClip, ForeignDevice, ForeignParam
 from openenv_daw.tasks.model import Check, OracleStep, Task
+from openenv_daw.tasks.resolve import resolve_for_profile
 
 PLACEHOLDER = re.compile(r"{(\w+)}")
 Parts = dict[str, Any]
@@ -40,6 +43,7 @@ def families() -> dict[str, float]:
         "four_on_floor_beat",
         "reverb_send",
         "mix_balance",
+        "near_miss",
         "infeasible",
     ]
     return {n: float(load_family(n)["weight"]) for n in names}
@@ -95,7 +99,13 @@ def gen_session_setup(rng: random.Random, pool: dict[str, list[Any]], used: set[
             checks.append(Check(kind="track_exists", args={"track": n, "kind": "midi"}))
             oracle.append(_step("create_track", name=n, kind="midi"))
         checks.append(Check(kind="track_count", args={"kind": "midi", "n": len(names)}))
-    return {"vals": vals, "checks": checks, "oracle": oracle, "touchable": touch}
+    return {
+        "vals": vals,
+        "checks": checks,
+        "oracle": oracle,
+        "touchable": touch,
+        "allowed_new": list(names) if "names" in used else [],
+    }
 
 
 def gen_melody_in_key(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
@@ -115,6 +125,8 @@ def gen_melody_in_key(rng: random.Random, pool: dict[str, list[Any]], used: set[
         Check(kind="track_exists", args={"track": track, "kind": "midi"}, critical=True),
         Check(kind="has_device", args={"track": track, "device": "simple_synth"}, critical=True),
         Check(kind="notes_in_key", args={"track": track, "key": key}, critical=True),
+        Check(kind="distinct_pitches_at_least", args={"track": track, "n": 3}, critical=True),
+        Check(kind="notes_span", args={"track": track, "bar_beats": 4.0}, critical=True),
         Check(
             kind="clip_at", args={"track": track, "start_beat": 0.0, "length_beats": float(length)}
         ),
@@ -133,6 +145,7 @@ def gen_melody_in_key(rng: random.Random, pool: dict[str, list[Any]], used: set[
         "checks": checks,
         "oracle": oracle,
         "touchable": [],
+        "allowed_new": [track, "device:simple_synth"],
     }
 
 
@@ -154,7 +167,14 @@ def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[
             critical=True,
         ),
         Check(
-            kind="no_notes_of_pitch_off_beats", args={"track": track, "pitch": KICK, "beats": kicks}
+            kind="hits_only_on",
+            args={"track": track, "pitch": KICK, "beats": kicks},
+            critical=True,
+        ),
+        Check(
+            kind="only_pitches",
+            args={"track": track, "pitches": [KICK, CLOSED_HAT] if clause else [KICK]},
+            critical=True,
         ),
         Check(
             kind="clip_at", args={"track": track, "start_beat": 0.0, "length_beats": float(length)}
@@ -174,6 +194,13 @@ def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[
         checks.append(
             Check(kind="hits_on_beats", args={"track": track, "pitch": CLOSED_HAT, "beats": hats})
         )
+        checks.append(
+            Check(
+                kind="hits_only_on",
+                args={"track": track, "pitch": CLOSED_HAT, "beats": hats},
+                critical=True,
+            )
+        )
     oracle.append(_step("insert_midi_notes", clip="Beat", notes=notes))
     touch: list[str] = []
     if "bpm" in used:
@@ -182,7 +209,13 @@ def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[
         checks.append(Check(kind="tempo_is", args={"bpm": bpm}, critical=True))
         oracle.append(_step("set_transport", tempo_bpm=bpm))
         touch.append("transport")
-    return {"vals": vals, "checks": checks, "oracle": oracle, "touchable": touch}
+    return {
+        "vals": vals,
+        "checks": checks,
+        "oracle": oracle,
+        "touchable": touch,
+        "allowed_new": [track, "device:drum_kit"],
+    }
 
 
 def gen_reverb_send(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
@@ -229,6 +262,7 @@ def gen_reverb_send(rng: random.Random, pool: dict[str, list[Any]], used: set[st
         "oracle": oracle,
         "initial": initial,
         "touchable": [f"track:{source}:sends"],
+        "allowed_new": [ret, "device:reverb"],
     }
 
 
@@ -271,6 +305,70 @@ def gen_mix_balance(rng: random.Random, pool: dict[str, list[Any]], used: set[st
     }
 
 
+def gen_near_miss(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+    """Feasible requests that mention infeasible-sounding words (group, plugin names, reverb), so
+    a policy cannot refuse by keyword matching."""
+    names = rng.sample(pool["names"], 3)
+    a, b = names[0], names[1]
+    initial = build_session([("create_track", {"name": n, "kind": "midi"}) for n in names])
+    vals = {"a": a, "b": b}
+    base: Parts = {"vals": vals, "initial": initial, "allowed_new": []}
+    if "group" in used:
+        g = rng.choice(pool["group"])
+        vals["group"] = g
+        return base | {
+            "checks": [
+                Check(kind="track_exists", args={"track": g, "kind": "midi"}, critical=True)
+            ],
+            "oracle": [_step("create_track", name=g, kind="midi")],
+            "touchable": [],
+            "allowed_new": [g],
+        }
+    if "plugin" in used:
+        p = rng.choice(pool["plugin"])
+        vals["plugin"] = p
+        return base | {
+            "checks": [
+                Check(kind="track_exists", args={"track": p, "kind": "midi"}, critical=True),
+                Check(kind="track_absent", args={"track": a}, critical=True),
+            ],
+            "oracle": [_step("rename_track", track=a, name=p)],
+            "touchable": [f"track:{a}:mixer"],
+        }
+    if "db" in used:
+        db = rng.choice(pool["db"])
+        vals["db"] = str(db)
+        return base | {
+            "checks": [
+                Check(
+                    kind="volume_in",
+                    args={"track": a, "min": db - 0.5, "max": db + 0.5},
+                    critical=True,
+                )
+            ],
+            "oracle": [_step("set_mixer_channel", track=a, volume_db=db)],
+            "touchable": [f"track:{a}:mixer"],
+        }
+    if "b" in used:
+        return base | {
+            "checks": [
+                Check(kind="mute_is", args={"track": a, "value": True}, critical=True),
+                Check(kind="mute_is", args={"track": b, "value": True}, critical=True),
+            ],
+            "oracle": [
+                _step("set_mixer_channel", track=a, mute=True),
+                _step("set_mixer_channel", track=b, mute=True),
+            ],
+            "touchable": [f"track:{a}:mixer", f"track:{b}:mixer"],
+        }
+    return base | {
+        "checks": [Check(kind="has_device", args={"track": a, "device": "reverb"}, critical=True)],
+        "oracle": [_step("insert_device", track=a, device="reverb")],
+        "touchable": [f"track:{a}:devices"],
+        "allowed_new": ["device:reverb"],
+    }
+
+
 def gen_infeasible(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
     names = rng.sample(pool["names"], 3)
     initial = build_session([("create_track", {"name": n, "kind": "midi"}) for n in names])
@@ -278,13 +376,14 @@ def gen_infeasible(rng: random.Random, pool: dict[str, list[Any]], used: set[str
     for k in ("group", "plugin"):
         if k in used:
             vals[k] = rng.choice(pool[k])
+    # checks/oracle are the blocked form; ``requires`` (capability tags from the template) makes
+    # resolve_for_profile keep them
     return {
         "vals": vals,
         "checks": [Check(kind="state_unchanged", critical=True)],
         "oracle": [],
         "initial": initial,
         "touchable": [],
-        "blocked": True,
     }
 
 
@@ -294,12 +393,52 @@ GENERATORS: dict[str, Callable[[random.Random, dict[str, list[Any]], set[str]], 
     "four_on_floor_beat": gen_four_on_floor,
     "reverb_send": gen_reverb_send,
     "mix_balance": gen_mix_balance,
+    "near_miss": gen_near_miss,
     "infeasible": gen_infeasible,
 }
 
 
+FOREIGN_PROB = 0.2
+_FOREIGN_DEVICES = [
+    ("Serum", [("Cutoff", "1.2 kHz"), ("Wavetable", "Basic Shapes")]),
+    ("Kontakt", [("Volume", "-3.0 dB")]),
+    ("Pigments", [("Macro 1", "42 %"), ("Macro 2", "10 %")]),
+]
+
+
+def inject_foreign(initial: dict[str, Any] | None, rng: random.Random) -> dict[str, Any]:
+    """Add an untouchable read-only group track (foreign plugin and audio/session clips)."""
+    s = Session.restore(initial) if initial else Session()
+    name, params = rng.choice(_FOREIGN_DEVICES)
+    s.tracks.append(
+        Track(
+            id=s.next_id("trk"),
+            name="Legacy Bus",
+            kind="group",
+            foreign_devices=[
+                ForeignDevice(
+                    id=s.next_id("fdv"),
+                    name=name,
+                    params=[ForeignParam(name=n, display=d) for n, d in params],
+                )
+            ],
+            foreign_clips=[
+                ForeignClip(
+                    id=s.next_id("fcl"), name="Vocal Take", kind="audio", length_beats=16.0
+                ),
+                ForeignClip(
+                    id=s.next_id("fcl"), name="Scene Loop", kind="session", length_beats=8.0
+                ),
+            ],
+        )
+    )
+    return s.snapshot()
+
+
 def generate(family: str, seed: int, split: Literal["train", "heldout"] = "train") -> Task:
-    """Deterministically build a task from (family, split, seed)."""
+    """Deterministically build a task from (family, split, seed). The result is
+    profile-neutral: ``requires`` is what ``resolve_for_profile`` checks. It is stored in its
+    form for the default (portable) profile."""
     data = load_family(family)
     rng = random.Random(f"{family}:{split}:{seed}")
     templates = [t for t in data["templates"] if t["split"] == split]
@@ -308,17 +447,25 @@ def generate(family: str, seed: int, split: Literal["train", "heldout"] = "train
     pool = {k: v[split] for k, v in data["slots"].items()}
     parts = GENERATORS[family](rng, pool, used)
     intent = tpl["text"].format(**parts["vals"])
-    blocked = parts.get("blocked", False)
-    oracle = parts["oracle"] + [SUBMIT_BLOCKED if blocked else SUBMIT_DONE]
-    return Task(
+    oracle = parts["oracle"] + [SUBMIT_DONE]
+    tools = sorted({o.tool for o in oracle if o.tool != "submit"})
+    requires = tools + [c for c in tpl.get("requires", []) if c not in tools]
+    initial = parts.get("initial")
+    tags: list[str] = []
+    if random.Random(f"foreign:{family}:{split}:{seed}").random() < FOREIGN_PROB:
+        initial = inject_foreign(initial, random.Random(f"foreign-pick:{family}:{split}:{seed}"))
+        tags.append("foreign")
+    task = Task(
         task_id=f"{family}-{split}-{seed}",
         family=family,
         intent=intent,
         split=split,
-        initial_state=parts.get("initial"),
+        initial_state=initial,
         checks=parts["checks"],
         touchable=parts["touchable"],
-        expected_status="blocked" if blocked else "done",
+        allowed_new=parts.get("allowed_new", []),
+        requires=requires,
         oracle=oracle,
-        tags=["blocked"] if blocked else [],
+        tags=tags,
     )
+    return resolve_for_profile(task)

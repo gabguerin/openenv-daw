@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openenv_daw.schema import Clip, Device, Note, Session, Track
+from openenv_daw.schema import Clip, Device, ForeignDevice, Note, Session, Track
 from openenv_daw.schema.units import (
     DB_MAX,
     DB_MIN,
@@ -44,10 +44,29 @@ def find_clip(s: Session, ref: str) -> tuple[Track, Clip]:
     if not hits:
         hits = [(t, c) for t in s.tracks for c in t.clips if c.name.lower() == ref.lower()]
     if not hits:
+        for t in s.tracks:
+            for fc in t.foreign_clips:
+                if ref in (fc.id,) or ref.lower() == fc.name.lower():
+                    raise unsupported(
+                        f"clip {fc.name!r} ({fc.id}) is a {fc.kind} clip; it is read-only here"
+                    )
         raise not_found(f"no clip {ref!r}")
     if len(hits) > 1:
         raise invalid(f"ambiguous clip {ref!r}; use its id")
     return hits[0]
+
+
+def find_foreign_device(t: Track, ref: str) -> ForeignDevice | None:
+    for d in t.foreign_devices:
+        if d.id == ref or d.name.lower() == ref.lower():
+            return d
+    return None
+
+
+def _writable(t: Track) -> Track:
+    if t.kind == "group":
+        raise unsupported(f"track {t.name!r} is a group track; it is read-only here")
+    return t
 
 
 def find_device(t: Track, ref: str) -> Device:
@@ -56,6 +75,10 @@ def find_device(t: Track, ref: str) -> Device:
             return d
     hits = [d for d in t.devices if ref.lower() in (d.device.lower(), d.name.lower())]
     if not hits:
+        if (fd := find_foreign_device(t, ref)) is not None:
+            raise unsupported(
+                f"device {fd.name!r} ({fd.id}) is foreign; its parameters are read-only"
+            )
         raise not_found(f"no device {ref!r} on track {t.name!r}")
     if len(hits) > 1:
         raise invalid(f"ambiguous device {ref!r} on track {t.name!r}; use its id")
@@ -132,6 +155,17 @@ def track_view(t: Track, detail: bool = True, notes: bool = False) -> dict[str, 
         "devices": [device_view(d, params=detail) for d in t.devices],
         "clips": [clip_view(c, notes=notes) for c in t.clips],
     }
+    if t.foreign_devices:
+        v["foreign_devices"] = [
+            {
+                "id": d.id,
+                "name": d.name,
+                **({"params": [p.model_dump() for p in d.params]} if detail else {}),
+            }
+            for d in t.foreign_devices
+        ]
+    if t.foreign_clips:
+        v["foreign_clips"] = [c.model_dump() for c in t.foreign_clips]
     return v
 
 
@@ -195,7 +229,7 @@ def delete_track(s: Session, track: str) -> dict[str, Any]:
 
 
 def rename_track(s: Session, track: str, name: str) -> dict[str, Any]:
-    t = find_track(s, track)
+    t = _writable(find_track(s, track))
     t.name = _check_name(s, name, exclude=t)
     return {"ok": True, "track": {"id": t.id, "name": t.name}}
 
@@ -318,7 +352,7 @@ def set_mixer_channel(
     mute: bool | None = None,
     solo: bool | None = None,
 ) -> dict[str, Any]:
-    t = find_track(s, track)
+    t = _writable(find_track(s, track))
     if volume_db is None and pan is None and mute is None and solo is None:
         raise invalid("provide at least one of volume_db, pan, mute, solo")
     if volume_db is not None:
@@ -343,7 +377,7 @@ def set_mixer_channel(
 
 
 def set_send(s: Session, track: str, return_track: str, level_db: float) -> dict[str, Any]:
-    t = find_track(s, track)
+    t = _writable(find_track(s, track))
     r = find_track(s, return_track)
     if r.kind != "return":
         raise invalid(f"{r.name!r} is not a return track")
@@ -371,7 +405,7 @@ def list_devices(s: Session, role: str | None = None) -> dict[str, Any]:
 def insert_device(
     s: Session, track: str, device: str, position: int | None = None
 ) -> dict[str, Any]:
-    t = find_track(s, track)
+    t = _writable(find_track(s, track))
     spec: DeviceSpec | None = load_catalog().get(device)
     if spec is None:
         raise not_found(f"no device {device!r}; call list_devices")
@@ -401,6 +435,12 @@ def get_device_params(
     s: Session, track: str, device: str, query: str | None = None
 ) -> dict[str, Any]:
     t = find_track(s, track)
+    if (
+        not any(d.id == device for d in t.devices)
+        and (fd := find_foreign_device(t, device)) is not None
+    ):
+        ps = [p.model_dump() for p in fd.params if not query or query.lower() in p.name.lower()]
+        return {"ok": True, "track": t.id, "device": fd.id, "foreign": True, "params": ps}
     d = find_device(t, device)
     return {"ok": True, "track": t.id, "device": d.id, "params": param_infos(d, query)}
 

@@ -16,7 +16,7 @@ async def test_lists_portable_tools_plus_submit(server):
     mcp, _ = server
     async with Client(mcp) as c:
         names = {t.name for t in await c.list_tools()}
-    assert names == set(PROFILES["portable"]) | {"submit"}
+    assert names == set(PROFILES["portable"]["tools"]) | {"submit"}
 
 
 async def test_call_roundtrip_and_error_result(server):
@@ -42,7 +42,7 @@ async def test_profile_filters_tools():
     mcp = build_server(lambda: b, profile="mixer_only")
     async with Client(mcp) as c:
         names = {t.name for t in await c.list_tools()}
-    assert names == set(PROFILES["mixer_only"])
+    assert names == set(PROFILES["mixer_only"]["tools"])
 
 
 async def test_instructions_exposed(server):

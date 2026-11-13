@@ -10,6 +10,7 @@ go straight to the in-process simulator (no MCP client round trip) for training 
 from __future__ import annotations
 
 import inspect
+import itertools
 import json
 import re
 from collections.abc import Callable
@@ -23,6 +24,7 @@ from openenv_daw.sim.profiles import DEFAULT_PROFILE
 from openenv_daw.tasks.store import TaskStore, default_store
 from openenv_daw.tools.registry import NoteIn, build_server, load_instructions
 
+_SEEDS = itertools.count()
 MAX_STEPS = 30
 MAX_CONSECUTIVE_ERRORS = 3
 
@@ -106,8 +108,13 @@ def make_environment_class(
             self.store = store or default_store()
             self.episode: Episode | None = None
 
-        def reset(self, task_id: str | None = None, **kwargs: Any) -> None:
-            task = self.store.get(task_id) if task_id else self.store.sample("train", 0)
+        def reset(self, task_id: str | None = None, seed: int | None = None, **kwargs: Any) -> None:
+            if task_id:
+                task = self.store.get(task_id, profile)
+            else:  # no task given: sample by seed (a process-wide counter when none is passed)
+                task = self.store.sample(
+                    "train", next(_SEEDS) if seed is None else seed, profile=profile
+                )
             self.episode = Episode(task, profile, max_steps, max_consecutive_errors)
 
         def get_reward(self) -> float:
@@ -135,14 +142,19 @@ def make_environment_class(
 DawToolEnv = make_environment_class()
 
 
-def build_dataset(split: str = "train", n: int = 256, store: TaskStore | None = None) -> list[dict]:
+def build_dataset(
+    split: str = "train",
+    n: int = 256,
+    store: TaskStore | None = None,
+    profile: str = DEFAULT_PROFILE,
+) -> list[dict]:
     """Rows for ``train_dataset``: a conversational ``prompt`` plus the ``task_id`` that ``reset``
     receives. Works with ``datasets.Dataset.from_list``."""
     store = store or default_store()
     instructions = load_instructions()
     rows = []
     for i in range(n):
-        task = store.get_task(split, i)
+        task = store.get_task(split, i, profile)
         rows.append(
             {
                 "prompt": [
