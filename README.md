@@ -78,3 +78,10 @@ uv run python -m openenv_daw.runner export rollouts.jsonl --out sft.jsonl
 
 `export` keeps only successful episodes, deduplicated by (task, action sequence), and writes
 `{"messages", "tools"}` rows ready for chat-format SFT.
+
+## Training with TRL
+
+`openenv_daw.trl_env.DawToolEnv` is a TRL `environment_factory` class generated from the same
+FastMCP registry (tool names, signatures and docstrings are not duplicated). It calls the simulator
+in-process, so it avoids the MCP client overhead and runs at simulator speed. `get_reward()` returns
+the episode score; stopping without `submit` is scored as truncated. See `examples/grpo_train.py`.
