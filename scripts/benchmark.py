@@ -1,6 +1,6 @@
 """Steps/sec benchmark: in-process (simulator only and full environment) and over WebSocket.
 
-    uv run python scripts/benchmark.py [--url http://localhost:8000]
+uv run python scripts/benchmark.py [--url http://localhost:8000]
 """
 
 from __future__ import annotations

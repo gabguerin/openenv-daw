@@ -19,13 +19,12 @@ from openenv.core.env_server.mcp_types import (
 from openenv.core.env_server.types import Action, Observation
 
 from openenv_daw.backends import SimBackend
-from openenv_daw.rewards import DawRubric, score_episode
-from openenv_daw.schema import Session
+from openenv_daw.rewards import DawRubric
 from openenv_daw.sim.profiles import DEFAULT_PROFILE
-from openenv_daw.tasks.model import Task
 from openenv_daw.tasks.store import TaskStore, default_store
 from openenv_daw.tools import build_server
 
+from .episode import Episode
 from .models import DawResetObservation, DawState
 
 MAX_STEPS = int(os.getenv("OPENENV_DAW_MAX_STEPS", "30"))
@@ -60,19 +59,26 @@ class DawEnvironment(MCPEnvironment):
         self.profile = profile
         self.max_steps = max_steps
         self.max_consecutive_errors = max_consecutive_errors
-        self.backend = SimBackend(profile=profile)
-        self._task: Task | None = None
-        self._initial = Session()
-        self._submitted: tuple[str, str] | None = None
-        self._done = True
+        self.episode: Episode | None = None
+        self._idle_backend = SimBackend(profile=profile)
         self._state = DawState(episode_id=str(uuid.uuid4()), profile=profile)
-        super().__init__(build_server(lambda: self.backend, profile, on_submit=self._on_submit))
+        super().__init__(
+            build_server(
+                lambda: self.backend,
+                profile,
+                on_submit=lambda status, reason: self._require_episode().on_submit(status, reason),
+            )
+        )
         self.rubric = DawRubric()
 
-    # --- submit tool hook ---------------------------------------------------------------
-    def _on_submit(self, status: str, reason: str) -> dict[str, Any]:
-        self._submitted = (status, reason)
-        return {"ok": True, "status": status, "message": "Task submitted."}
+    @property
+    def backend(self) -> SimBackend:
+        return self.episode.backend if self.episode else self._idle_backend
+
+    def _require_episode(self) -> Episode:
+        if self.episode is None:
+            raise RuntimeError("call reset before step")
+        return self.episode
 
     # --- episode ------------------------------------------------------------------------
     def reset(
@@ -95,11 +101,7 @@ class DawEnvironment(MCPEnvironment):
             task = self.store.get_task(split, index)
         else:
             task = self.store.sample(split, seed or 0, family)
-        self._task = task
-        self._initial = Session.restore(task.initial_state) if task.initial_state else Session()
-        self.backend = SimBackend(Session.restore(self._initial.snapshot()), self.profile)
-        self._submitted = None
-        self._done = False
+        self.episode = Episode(task, self.profile, self.max_steps, self.max_consecutive_errors)
         self._reset_rubric()
         self._state = DawState(
             episode_id=episode_id or str(uuid.uuid4()),
@@ -114,84 +116,32 @@ class DawEnvironment(MCPEnvironment):
             metadata={"family": task.family, "split": task.split},
         )
 
-    def _record(self, action: CallToolAction, obs: CallToolObservation) -> bool:
-        """Log the verified step; return whether it was an error."""
-        data = result_data(obs)
-        if obs.error is not None:
-            err: dict[str, Any] | None = {
-                "code": obs.error.error_type.value,
-                "message": obs.error.message,
-            }
-        elif data is not None and data.get("ok") is False:
-            err = data.get("error")
-        elif data is None:
-            err = {"code": "execution_error", "message": "tool returned no structured result"}
-        else:
-            err = None
-        s = self._state
-        s.step_count += 1
-        s.step_log.append(
-            {
-                "step": s.step_count,
-                "tool": action.tool_name,
-                "arguments": action.arguments,
-                "ok": err is None,
-                "error": err,
-                "result": data,
-            }
-        )
-        if err is None:
-            s.consecutive_errors = 0
-        else:
-            s.consecutive_errors += 1
-            s.error_count += 1
-        return err is not None
-
-    def _finalize(self, action: Action, obs: Observation, truncated: bool, why: str) -> None:
-        assert self._task is not None
-        status = self._submitted[0] if self._submitted else None
-        score = score_episode(
-            self._task,
-            self._initial,
-            self.backend.session,
-            status,
-            self._state.error_count,
-            truncated,
-        )
-        s = self._state
-        s.done, s.status, s.success, s.score = True, status, score.success, score.as_dict()
-        s.state_hash = self.backend.session.state_hash()
-        self._done = True
-        obs.done = True
-        obs.metadata.update(
-            {
-                "score": s.score,
-                "success": score.success,
-                "termination": why,
-                "truncated": truncated,
-                "failed_checks": score.failed_checks,
-                "step_log": s.step_log,
-                "state_hash": s.state_hash,
-            }
-        )
-
     def _post_step(self, action: Action, obs: Observation) -> Observation:
         if isinstance(action, CallToolAction) and isinstance(obs, CallToolObservation):
-            self._record(action, obs)
-            self._state.state_hash = self.backend.session.state_hash()
+            ep = self._require_episode()
+            transport = (
+                {"code": obs.error.error_type.value, "message": obs.error.message}
+                if obs.error is not None
+                else None
+            )
+            ep.record(action.tool_name, action.arguments, result_data(obs), transport)
+            why = ep.after_step()
             s = self._state
-            if self._submitted is not None:
-                self._finalize(action, obs, False, "submit")
-            elif s.consecutive_errors >= self.max_consecutive_errors:
-                self._finalize(action, obs, True, "error_limit")
-            elif s.step_count >= self.max_steps:
-                self._finalize(action, obs, True, "step_limit")
+            s.step_count, s.consecutive_errors = ep.step_count, ep.consecutive_errors
+            s.error_count, s.step_log = ep.error_count, ep.step_log
+            s.state_hash = self.backend.session.state_hash()
+            if why is not None:
+                assert ep.score is not None
+                s.done, s.score, s.success = True, ep.score.as_dict(), ep.score.success
+                s.status = ep.score.status
+                obs.done = True
+                obs.metadata.update(ep.result_metadata())
         return obs
 
     def _check_open(self, action: Action) -> None:
-        if self._task is None:
+        if self.episode is None:
             raise RuntimeError("call reset before step")
-        if self._done and isinstance(action, CallToolAction):
+        if self.episode.done and isinstance(action, CallToolAction):
             raise RuntimeError("episode is over; call reset")
 
     def step(self, action: Action, timeout_s: float | None = None, **kwargs: Any) -> Observation:

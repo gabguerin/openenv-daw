@@ -63,3 +63,18 @@ For high-throughput RL use the in-process TRL wrapper, which calls the simulator
 
 Apache-2.0. A future headless audio backend (DawDreamer/Pedalboard, GPL-3) would be shipped as a
 separate image under GPL terms.
+
+## Rollouts and SFT data
+
+The runner drives any OpenAI-compatible chat endpoint against the environment, in-process or over
+WebSocket against a running server.
+
+```bash
+uv sync --extra runner
+export OPENAI_BASE_URL=... OPENAI_API_KEY=... OPENENV_DAW_MODEL=...
+uv run python -m openenv_daw.runner rollout --split train --n 100 --out rollouts.jsonl
+uv run python -m openenv_daw.runner export rollouts.jsonl --out sft.jsonl
+```
+
+`export` keeps only successful episodes, deduplicated by (task, action sequence), and writes
+`{"messages", "tools"}` rows ready for chat-format SFT.
