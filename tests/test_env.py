@@ -108,3 +108,13 @@ def test_store_ids_and_split():
     assert s.get_task("heldout", 0).split == "heldout"
     train_intents = {generate(f, i).intent for f in families() for i in range(30)}
     assert not train_intents & {t.intent for t in s.heldout}
+
+
+async def test_step_async_matches_sync():
+    t = generate("melody_in_key", 1)
+    env = DawEnvironment()
+    env.reset(task_id=t.task_id)
+    last = None
+    for st in t.oracle:
+        last = await env.step_async(CallToolAction(tool_name=st.tool, arguments=st.args))
+    assert last.done and last.reward == 1.0

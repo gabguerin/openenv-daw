@@ -186,7 +186,6 @@ class DawEnvironment(MCPEnvironment):
                 self._finalize(action, obs, True, "error_limit")
             elif s.step_count >= self.max_steps:
                 self._finalize(action, obs, True, "step_limit")
-        obs.reward = self._apply_rubric(action, obs)
         return obs
 
     def _check_open(self, action: Action) -> None:
@@ -197,15 +196,19 @@ class DawEnvironment(MCPEnvironment):
 
     def step(self, action: Action, timeout_s: float | None = None, **kwargs: Any) -> Observation:
         self._check_open(action)
-        obs = super().step(action, timeout_s=timeout_s, **kwargs)
-        return self._post_step(action, obs)
+        obs = self._post_step(action, super().step(action, timeout_s=timeout_s, **kwargs))
+        obs.reward = self._apply_rubric(action, obs)
+        return obs
 
     async def step_async(
         self, action: Action, timeout_s: float | None = None, **kwargs: Any
     ) -> Observation:
         self._check_open(action)
-        obs = await super().step_async(action, timeout_s=timeout_s, **kwargs)
-        return self._post_step(action, obs)
+        obs = self._post_step(
+            action, await super().step_async(action, timeout_s=timeout_s, **kwargs)
+        )
+        obs.reward = await self._apply_rubric_async(action, obs)
+        return obs
 
     def _step_impl(
         self, action: Action, timeout_s: float | None = None, **kwargs: Any
