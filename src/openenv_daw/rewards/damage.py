@@ -47,7 +47,8 @@ def damage_violations(initial: Session, final: Session, touchable: list[str]) ->
 
 def extraneous_violations(initial: Session, final: Session, task: Any) -> list[str]:
     """Objects the task did not ask for: unlisted new tracks or devices, solo anywhere, and a new
-    track fader above 0 dB. ``task.allowed_new`` lists track names and ``device:<id>`` entries."""
+    track fader above 0 dB. ``task.allowed_new`` lists track names, ``device:<id>`` entries and ``solo:<track>`` entries
+    (for tasks that explicitly ask for a solo)."""
     allowed = {a.lower() for a in task.allowed_new}
     out: list[str] = []
     old = {t.id: t for t in initial.tracks}
@@ -58,7 +59,7 @@ def extraneous_violations(initial: Session, final: Session, task: Any) -> list[s
                 out.append(f"extra track {t.name}")
             if t.volume_db > 0.0:
                 out.append(f"new track {t.name} fader above 0 dB")
-        if t.solo and not (before and before.solo):
+        if t.solo and not (before and before.solo) and f"solo:{t.name}".lower() not in allowed:
             out.append(f"track {t.name} soloed")
         known = {d.id for d in before.devices} if before else set()
         for d in t.devices:

@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from openenv_daw.music import scale_classes
+from openenv_daw.music import MAJOR, MINOR, root_pc, scale_classes
 from openenv_daw.schema import Session, Track
 
 CheckFn = Callable[[Session, Session, dict[str, Any]], bool]
@@ -27,6 +27,15 @@ def _track(s: Session, ref: str) -> Track | None:
 
 def _notes(t: Track) -> list[Any]:
     return [n for c in t.clips for n in c.notes]
+
+
+def _scoped(t: Track | None, a: dict[str, Any]) -> list[Any]:
+    """Notes of the clip starting at ``a["start_beat"]`` when given, else of the whole track."""
+    if t is None:
+        return []
+    if "start_beat" not in a:
+        return _notes(t)
+    return [n for c in t.clips if abs(c.start_beat - a["start_beat"]) < 1e-6 for n in c.notes]
 
 
 def _abs_notes(t: Track) -> list[tuple[float, Any]]:
@@ -98,7 +107,7 @@ def clip_at(s, i, a):
 @check
 def note_count_at_least(s, i, a):
     t = _track(s, a["track"])
-    return t is not None and len(_notes(t)) >= a["n"]
+    return t is not None and len(_scoped(t, a)) >= a["n"]
 
 
 @check
@@ -118,7 +127,7 @@ def notes_in_key(s, i, a):
 @check
 def notes_pitch_range(s, i, a):
     t = _track(s, a["track"])
-    ns = _notes(t) if t else []
+    ns = _scoped(t, a)
     return bool(ns) and all(a["min"] <= n.pitch <= a["max"] for n in ns)
 
 
@@ -185,6 +194,72 @@ def notes_span(s, i, a):
         return False
     bar = a.get("bar_beats", 4.0)
     return all(any(n.start_beat >= c.length_beats - bar - 1e-6 for n in c.notes) for c in t.clips)
+
+
+@check
+def pitch_classes_within(s, i, a):
+    """The track holds notes and every note's pitch class is in ``classes``."""
+    t = _track(s, a["track"])
+    ns = _scoped(t, a)
+    return bool(ns) and all(n.pitch % 12 in set(a["classes"]) for n in ns)
+
+
+@check
+def existing_notes_kept(s, i, a):
+    """Every note the track had initially is still there (same pitch, start, duration)."""
+    t, t0 = _track(s, a["track"]), _track(i, a["track"])
+    if t is None or t0 is None:
+        return False
+    now = {
+        (c.start_beat, n.pitch, n.start_beat, n.duration_beats) for c in t.clips for n in c.notes
+    }
+    return all(
+        (c.start_beat, n.pitch, n.start_beat, n.duration_beats) in now
+        for c in t0.clips
+        for n in c.notes
+    )
+
+
+@check
+def clip_named(s, i, a):
+    t = _track(s, a["track"])
+    return t is not None and any(
+        abs(c.start_beat - a["start_beat"]) < 1e-6 and c.name.lower() == a["name"].lower()
+        for c in t.clips
+    )
+
+
+_NUMERALS = {"i": 0, "ii": 1, "iii": 2, "iv": 3, "v": 4, "vi": 5, "vii": 6}
+
+
+def chord_pitch_classes(key: str, numeral: str) -> set[int]:
+    """Diatonic triad (pitch classes) for a roman numeral in ``key``."""
+    root, mode = key.split()
+    steps = MAJOR if mode.lower() == "major" else MINOR
+    deg = _NUMERALS[numeral.lower()]
+    r = root_pc(root)
+    return {(r + steps[(deg + k) % 7]) % 12 for k in (0, 2, 4)}
+
+
+@check
+def chord_progression(s, i, a):
+    """One diatonic triad per bar: the notes starting in bar k have exactly the pitch classes
+    of the k-th numeral of ``numerals`` in ``key``."""
+    t = _track(s, a["track"])
+    if t is None:
+        return False
+    bar = a.get("bar_beats", 4.0)
+    notes = _abs_notes(t)
+    base = a.get("start_beat", min((c.start_beat for c in t.clips), default=0.0))
+    for k, num in enumerate(a["numerals"]):
+        pcs = {
+            n.pitch % 12
+            for b, n in notes
+            if base + k * bar - 1e-6 <= b < base + (k + 1) * bar - 1e-6
+        }
+        if pcs != chord_pitch_classes(a["key"], num):
+            return False
+    return True
 
 
 @check

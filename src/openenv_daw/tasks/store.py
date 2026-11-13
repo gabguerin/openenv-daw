@@ -73,6 +73,11 @@ def heldout_path() -> Path:
     return Path(str(resources.files("openenv_daw.tasks").joinpath(name)))
 
 
+def load_tasks(path: str | Path) -> list[Task]:
+    """Tasks from any JSONL file (for example a private benchmark)."""
+    return [Task.model_validate(json.loads(x)) for x in Path(path).read_text().splitlines() if x]
+
+
 def load_heldout() -> list[Task]:
     p = heldout_path()
     if not p.is_file():
