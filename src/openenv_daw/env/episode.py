@@ -3,9 +3,10 @@ limits, verified step log and terminal scoring."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
-from openenv_daw.backends import SimBackend
+from openenv_daw.backends import Backend, SimBackend
 from openenv_daw.rewards.rubrics import EpisodeScore, score_episode
 from openenv_daw.schema import Session
 from openenv_daw.tasks.model import Task
@@ -13,12 +14,22 @@ from openenv_daw.tasks.model import Task
 
 class Episode:
     def __init__(
-        self, task: Task, profile: str, max_steps: int, max_consecutive_errors: int
+        self,
+        task: Task,
+        profile: str,
+        max_steps: int,
+        max_consecutive_errors: int,
+        backend_factory: Callable[[str], Backend] | None = None,
+        masked_params: frozenset[str] = frozenset(),
     ) -> None:
         self.task = task
+        self.masked_params = masked_params
         self.max_steps, self.max_consecutive_errors = max_steps, max_consecutive_errors
         self.initial = Session.restore(task.initial_state) if task.initial_state else Session()
-        self.backend = SimBackend(Session.restore(self.initial.snapshot()), profile)
+        self.backend: Backend = (
+            backend_factory or (lambda p: SimBackend(profile=p, masked_params=masked_params))
+        )(profile)
+        self.backend.load(self.initial)
         self.step_count = 0
         self.consecutive_errors = 0
         self.error_count = 0
@@ -26,6 +37,7 @@ class Episode:
         self.submitted: tuple[str, str] | None = None
         self.done = False
         self.termination: str | None = None
+        self.fatal = False
         self.score: EpisodeScore | None = None
 
     def on_submit(self, status: str, reason: str) -> dict[str, Any]:
@@ -46,6 +58,7 @@ class Episode:
             err = {"code": "execution_error", "message": "tool returned no structured result"}
         elif data.get("ok") is False:
             err = data.get("error")
+            self.fatal = self.fatal or (err or {}).get("code") == "inconsistent_state"
         else:
             err = None
         self.step_count += 1
@@ -70,6 +83,8 @@ class Episode:
         """Finalize if the episode just ended; returns the termination reason."""
         if self.submitted is not None:
             return self.finalize(False, "submit")
+        if self.fatal:
+            return self.finalize(True, "inconsistent_state")
         if self.consecutive_errors >= self.max_consecutive_errors:
             return self.finalize(True, "error_limit")
         if self.step_count >= self.max_steps:
@@ -94,6 +109,7 @@ class Episode:
             "failed_checks": self.score.failed_checks,
             "step_log": self.step_log,
             "state_hash": self.backend.session.state_hash(),
+            "masked_params": sorted(self.masked_params),
         }
 
     def run(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:

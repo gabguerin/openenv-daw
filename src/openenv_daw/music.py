@@ -40,3 +40,14 @@ def triad(root: int, steps: tuple[int, ...], degree: int, octave: int = 3) -> li
 
 def note_name(pitch: int) -> str:
     return f"{PC_NAMES[pitch % 12]}{pitch // 12 - 1}"
+
+
+NUMERALS = {
+    "i": 0,
+    "ii": 1,
+    "iii": 2,
+    "iv": 3,
+    "v": 4,
+    "vi": 5,
+    "vii": 6,
+}  # roman numeral -> scale degree

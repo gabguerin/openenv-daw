@@ -1,6 +1,6 @@
 spec_version: 1
 name: openenv_daw
-version: 0.1.0
+version: 0.2.0
 type: space
 runtime: fastapi
 app: openenv_daw.server.app:app

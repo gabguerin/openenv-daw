@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from openenv.core.env_server.mcp_environment import MCPEnvironment
@@ -18,15 +19,20 @@ from openenv.core.env_server.mcp_types import (
 )
 from openenv.core.env_server.types import Action, Observation
 
-from openenv_daw.backends import SimBackend
+from openenv_daw.backends import Backend, SimBackend
 from openenv_daw.rewards import DawRubric
 from openenv_daw.sim.profiles import DEFAULT_PROFILE
+from openenv_daw.tasks.resolve import apply_param_mask
 from openenv_daw.tasks.store import TaskStore, default_store
 from openenv_daw.tools import build_server
+from openenv_daw.versions import SCHEMA_VERSION, TOOLSET_VERSION
 
 from .episode import Episode
 from .models import DawResetObservation, DawState
 
+PARAM_MASK_PROB = float(
+    os.getenv("OPENENV_DAW_PARAM_MASK_PROB", "0")
+)  # train split only; DawToolEnv defaults to 0.1
 MAX_STEPS = int(os.getenv("OPENENV_DAW_MAX_STEPS", "30"))
 MAX_CONSECUTIVE_ERRORS = int(os.getenv("OPENENV_DAW_MAX_CONSECUTIVE_ERRORS", "3"))
 
@@ -54,7 +60,11 @@ class DawEnvironment(MCPEnvironment):
         profile: str = DEFAULT_PROFILE,
         max_steps: int = MAX_STEPS,
         max_consecutive_errors: int = MAX_CONSECUTIVE_ERRORS,
+        backend_factory: Callable[[str], Backend] | None = None,
+        param_mask_prob: float = PARAM_MASK_PROB,
     ) -> None:
+        self.param_mask_prob = param_mask_prob
+        self.backend_factory = backend_factory
         self.store = store or default_store()
         self.profile = profile
         self.max_steps = max_steps
@@ -72,7 +82,7 @@ class DawEnvironment(MCPEnvironment):
         self.rubric = DawRubric()
 
     @property
-    def backend(self) -> SimBackend:
+    def backend(self) -> Backend:
         return self.episode.backend if self.episode else self._idle_backend
 
     def _require_episode(self) -> Episode:
@@ -101,7 +111,15 @@ class DawEnvironment(MCPEnvironment):
             task = self.store.get_task(split, index, self.profile)
         else:
             task = self.store.sample(split, seed or 0, family, self.profile)
-        self.episode = Episode(task, self.profile, self.max_steps, self.max_consecutive_errors)
+        task, mask = apply_param_mask(task, self.profile, self.param_mask_prob, seed or 0)
+        self.episode = Episode(
+            task,
+            self.profile,
+            self.max_steps,
+            self.max_consecutive_errors,
+            self.backend_factory,
+            mask,
+        )
         self._reset_rubric()
         self._state = DawState(
             episode_id=episode_id or str(uuid.uuid4()),
@@ -113,7 +131,12 @@ class DawEnvironment(MCPEnvironment):
             task_id=task.task_id,
             intent=task.intent,
             profile=self.profile,
-            metadata={"family": task.family, "split": task.split},
+            metadata={
+                "family": task.family,
+                "split": task.split,
+                "toolset_version": TOOLSET_VERSION,
+                "schema_version": SCHEMA_VERSION,
+            },
         )
 
     def _post_step(self, action: Action, obs: Observation) -> Observation:

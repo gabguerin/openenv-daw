@@ -6,7 +6,6 @@ import math
 from dataclasses import dataclass, field
 from functools import cache
 from importlib import resources
-from typing import Any
 
 import yaml
 
@@ -20,6 +19,24 @@ class ParamSpec:
     scale: str
     unit: str
     steps: tuple[str, ...] = ()
+
+    def to_value(self, norm: float) -> float:
+        """Numeric display value for a normalized 0..1 position (step index for ``steps``)."""
+        norm = min(max(norm, 0.0), 1.0)
+        if self.scale == "steps":
+            return float(min(int(norm * len(self.steps)), len(self.steps) - 1))
+        if self.scale == "log":
+            return self.min * math.pow(self.max / self.min, norm)
+        return self.min + (self.max - self.min) * norm
+
+    def to_norm(self, value: float) -> float:
+        """Inverse of ``to_value`` (step centers for ``steps``)."""
+        if self.scale == "steps":
+            return (min(max(int(value), 0), len(self.steps) - 1) + 0.5) / len(self.steps)
+        value = min(max(value, self.min), self.max)
+        if self.scale == "log":
+            return math.log(value / self.min) / math.log(self.max / self.min)
+        return (value - self.min) / (self.max - self.min)
 
     def display(self, norm: float) -> str:
         if self.scale == "steps":
@@ -38,7 +55,6 @@ class DeviceSpec:
     role: str
     description: str
     params: dict[str, ParamSpec] = field(default_factory=dict)
-    daw_ids: dict[str, Any] = field(default_factory=dict)
 
 
 @cache
@@ -60,5 +76,5 @@ def load_catalog() -> dict[str, DeviceSpec]:
             )
             for n, p in d["params"].items()
         }
-        out[did] = DeviceSpec(did, d["role"], d["description"], params, d.get("daw_ids", {}))
+        out[did] = DeviceSpec(did, d["role"], d["description"], params)
     return out

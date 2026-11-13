@@ -14,7 +14,9 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from openenv_daw.backends.base import Backend
+from openenv_daw.schema.units import GRID_DIVISIONS
 from openenv_daw.sim.profiles import DEFAULT_PROFILE, tools_for
+from openenv_daw.versions import TOOLSET_VERSION
 
 Result = dict[str, Any]
 
@@ -26,8 +28,20 @@ class NoteIn(BaseModel):
     velocity: int = Field(default=100, description="Velocity 1-127")
 
 
-def load_instructions() -> str:
-    return resources.files("openenv_daw.tools").joinpath("instructions.md").read_text()
+def load_instructions(profile: str = DEFAULT_PROFILE) -> str:
+    """The system prompt for ``profile``: lines tagged ``<<tool,...>>`` are kept only when at least
+    one of those tools is offered. Training and deployment both call this function."""
+    offered = tools_for(profile)
+    out = []
+    for line in (
+        resources.files("openenv_daw.tools").joinpath("instructions.md").read_text().splitlines()
+    ):
+        if line.startswith("<<"):
+            tags, _, line = line[2:].partition(">>")
+            if not offered & set(tags.split(",")):
+                continue
+        out.append(line)
+    return "\n".join(out).replace("{GRID}", str(GRID_DIVISIONS)).rstrip() + "\n"
 
 
 def build_server(
@@ -37,7 +51,7 @@ def build_server(
 ) -> FastMCP:
     """Build the FastMCP server. ``get_backend`` is resolved per call so an environment can swap
     its backend on reset. ``on_submit`` registers the env-only ``submit`` tool."""
-    mcp = FastMCP("openenv-daw", instructions=load_instructions())
+    mcp = FastMCP("openenv-daw", instructions=load_instructions(profile), version=TOOLSET_VERSION)
     allowed = tools_for(profile)
 
     def call(tool: str, **kw: Any) -> Result:

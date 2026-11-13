@@ -24,6 +24,11 @@ class TaskStore:
         self.heldout = heldout if heldout is not None else load_heldout()
         self._by_id = {t.task_id: t for t in self.heldout}
 
+    @classmethod
+    def from_paths(cls, *paths: str | Path) -> TaskStore:
+        """A store whose heldout split is the union of the given JSONL files."""
+        return cls([t for p in paths for t in load_tasks(p)])
+
     def list_splits(self) -> list[str]:
         return ["train", "heldout"]
 
@@ -61,11 +66,11 @@ class TaskStore:
         return self.sample("train", index, profile=profile)
 
 
-HELDOUT_DEFAULT = "heldout_v2.jsonl"  # heldout.jsonl (v1) is kept for comparison
+HELDOUT_DEFAULT = "heldout_v3.jsonl"  # heldout_v2.jsonl is frozen as published in 0.1.0
 
 
 def heldout_path() -> Path:
-    """``OPENENV_DAW_HELDOUT``: a file path, or a bundled file name such as ``heldout.jsonl``."""
+    """``OPENENV_DAW_HELDOUT``: a file path, or a bundled file name such as ``heldout_v2.jsonl``."""
     env = os.getenv("OPENENV_DAW_HELDOUT")
     if env and Path(env).is_file():
         return Path(env)

@@ -18,7 +18,7 @@ PER_FAMILY = {
 }
 
 
-def main(out: str = "src/openenv_daw/tasks/heldout_v2.jsonl") -> None:
+def main(out: str = "src/openenv_daw/tasks/heldout_v3.jsonl") -> None:
     seen: set[str] = set()
     lines = []
     for fam in families():

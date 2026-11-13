@@ -11,6 +11,7 @@ from openenv_daw.schema.units import (
     DB_MAX,
     DB_MIN,
     GRID,
+    GRID_DIVISIONS,
     MAX_NOTES_PER_CALL,
     PAN_MAX,
     PAN_MIN,
@@ -244,7 +245,7 @@ def create_midi_clip(
         raise invalid("start_beat must be >= 0")
     start, length = snap(start_beat), snap(length_beats)
     if length < GRID:
-        raise invalid("length_beats must be at least 1/16 beat")
+        raise invalid(f"length_beats must be at least 1/{GRID_DIVISIONS} beat")
     end = start + length
     for c in t.clips:
         if start < c.end_beat and c.start_beat < end:
@@ -463,7 +464,3 @@ def set_device_param(
         "device": d.id,
         "param": next(p for p in param_infos(d) if p["name"] == match[0]),
     }
-
-
-def unsupported_op(name: str) -> dict[str, Any]:
-    raise unsupported(f"{name} is not supported by this DAW profile")

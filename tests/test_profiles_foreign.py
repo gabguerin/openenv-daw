@@ -14,7 +14,9 @@ from openenv_daw.trl_env import build_dataset, make_environment_class
 
 def test_profiles_have_tools_and_capabilities():
     for p in PROFILES.values():
-        assert set(p) == {"tools", "capabilities"}
+        assert (
+            {"tools", "capabilities"} <= set(p) <= {"tools", "capabilities", "unsupported_params"}
+        )
 
 
 def test_mixer_only_blocks_tasks_that_need_missing_tools():
@@ -60,15 +62,25 @@ def test_trl_reset_samples_by_seed():
     assert env.episode.task.task_id == a and a != b
 
 
-def test_heldout_default_is_v2_and_v1_kept(monkeypatch):
+def test_heldout_default_is_v3_and_v2_frozen(monkeypatch):
     from openenv_daw.tasks.store import heldout_path, load_heldout
 
     monkeypatch.delenv("OPENENV_DAW_HELDOUT", raising=False)
-    assert heldout_path().name == "heldout_v2.jsonl"
+    assert heldout_path().name == "heldout_v3.jsonl"
+    v3 = load_heldout()
+    monkeypatch.setenv("OPENENV_DAW_HELDOUT", "heldout_v2.jsonl")
     v2 = load_heldout()
-    monkeypatch.setenv("OPENENV_DAW_HELDOUT", "heldout.jsonl")
-    v1 = load_heldout()
-    assert len(v1) == 60 and len(v2) >= 60 and {t.family for t in v2} >= set(families())
+    assert len(v2) == 70 and len(v3) >= 60 and {t.family for t in v3} >= set(families())
+
+
+def test_portable_gap_blocks_every_reverb_send_task():
+    from openenv_daw.tasks.store import load_heldout
+
+    ts = [t for t in load_heldout() if t.family == "reverb_send"]
+    assert ts
+    for t in ts:
+        r = resolve_for_profile(t, "portable_gap")
+        assert r.expected_status == "blocked"
 
 
 # --- foreign objects ------------------------------------------------------------------------

@@ -37,11 +37,43 @@ PROFILES: dict[str, dict[str, frozenset[str]]] = {
     # Logic and Cubase over a control surface; FL Studio's MIDI scripting (mixer, transport and
     # plugin parameters only).
     "mixer_only": {"tools": frozenset(MIXER_TOOLS), "capabilities": frozenset()},
+    # The parameter-gap slice of heldout_v3: the portable tools, but reverb.mix is read-only. Every
+    # reverb_send task needs it, so the correct answer there is submit("blocked").
+    "portable_gap": {
+        "tools": frozenset(CORE_TOOLS),
+        "capabilities": frozenset(),
+        "unsupported_params": frozenset({"reverb.mix"}),
+    },
 }
 # Capability tags beyond tools that a task may require: group_tracks, automation,
 # third_party_plugin, render. No profile offers them yet (an audio backend would add "render").
 DEFAULT_PROFILE = "portable"
-ENV_ONLY_TOOLS = ("submit",)
+
+
+def register_profile(
+    name: str,
+    tools: set[str] | frozenset[str],
+    capabilities: set[str] | frozenset[str] = frozenset(),
+    unsupported_params: set[str] | frozenset[str] = frozenset(),
+) -> None:
+    """Register a capability profile (for example from a DAW adapter package).
+
+    ``unsupported_params`` holds ``"<device>.<param>"`` entries the target DAW cannot set."""
+    unknown = set(tools) - set(CORE_TOOLS)
+    if unknown:
+        raise ValueError(f"unknown tools {sorted(unknown)}; the toolset is fixed")
+    if name in PROFILES:
+        raise ValueError(f"profile {name!r} is already registered")
+    PROFILES[name] = {
+        "tools": frozenset(tools),
+        "capabilities": frozenset(capabilities),
+        "unsupported_params": frozenset(unsupported_params),
+    }
+
+
+def unsupported_params_for(profile: str) -> frozenset[str]:
+    tools_for(profile)
+    return PROFILES[profile].get("unsupported_params", frozenset())
 
 
 def tools_for(profile: str) -> frozenset[str]:
@@ -55,10 +87,14 @@ def capabilities_for(profile: str) -> frozenset[str]:
     return PROFILES[profile]["capabilities"]
 
 
-def covers(profile: str, requires: list[str]) -> bool:
-    """Whether every required tool or capability tag exists in ``profile``."""
+def covers(profile: str, requires: list[str], mask: frozenset[str] = frozenset()) -> bool:
+    """Whether every required tool, capability tag and ``param:<device>.<param>`` entry is
+    available in ``profile`` (``mask`` adds per-episode unsupported parameters)."""
     have = tools_for(profile) | capabilities_for(profile) | {"submit"}
-    return all(r in have for r in requires)
+    missing_params = unsupported_params_for(profile) | mask
+    return all(
+        (r[6:] not in missing_params) if r.startswith("param:") else r in have for r in requires
+    )
 
 
 def check_allowed(profile: str, tool: str) -> None:

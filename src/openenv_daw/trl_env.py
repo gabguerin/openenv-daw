@@ -18,9 +18,10 @@ from typing import Any, get_args, get_origin
 
 from openenv.core.env_server.mcp_environment import get_server_tools
 
-from openenv_daw.backends import SimBackend
+from openenv_daw.backends import Backend, SimBackend
 from openenv_daw.env.episode import Episode
 from openenv_daw.sim.profiles import DEFAULT_PROFILE
+from openenv_daw.tasks.resolve import apply_param_mask
 from openenv_daw.tasks.store import TaskStore, default_store
 from openenv_daw.tools.registry import NoteIn, build_server, load_instructions
 
@@ -98,6 +99,8 @@ def make_environment_class(
     store: TaskStore | None = None,
     max_steps: int = MAX_STEPS,
     max_consecutive_errors: int = MAX_CONSECUTIVE_ERRORS,
+    backend_factory: Callable[[str], Backend] | None = None,
+    param_mask_prob: float = 0.1,
 ) -> type:
     """Build an ``environment_factory`` class exposing every tool of ``profile`` (plus submit)."""
     template = build_server(lambda: SimBackend(profile=profile), profile, on_submit=lambda s, r: {})
@@ -115,7 +118,12 @@ def make_environment_class(
                 task = self.store.sample(
                     "train", next(_SEEDS) if seed is None else seed, profile=profile
                 )
-            self.episode = Episode(task, profile, max_steps, max_consecutive_errors)
+            task, mask = apply_param_mask(
+                task, profile, param_mask_prob, seed if seed is not None else task.task_id
+            )
+            self.episode = Episode(
+                task, profile, max_steps, max_consecutive_errors, backend_factory, mask
+            )
 
         def get_reward(self) -> float:
             ep = self.episode
@@ -151,7 +159,7 @@ def build_dataset(
     """Rows for ``train_dataset``: a conversational ``prompt`` plus the ``task_id`` that ``reset``
     receives. Works with ``datasets.Dataset.from_list``."""
     store = store or default_store()
-    instructions = load_instructions()
+    instructions = load_instructions(profile)
     rows = []
     for i in range(n):
         task = store.get_task(split, i, profile)

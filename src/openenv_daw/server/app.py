@@ -7,13 +7,18 @@ import os
 from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.mcp_types import CallToolAction, CallToolObservation
 
+from openenv_daw.backends.registry import resolve_backend
 from openenv_daw.env.environment import DawEnvironment
 from openenv_daw.env.models import DawResetObservation, DawResetRequest, DawState
 from openenv_daw.sim.profiles import DEFAULT_PROFILE
 
 
 def _factory() -> DawEnvironment:
-    return DawEnvironment(profile=os.getenv("OPENENV_DAW_PROFILE", DEFAULT_PROFILE))
+    backend = os.getenv("OPENENV_DAW_BACKEND")
+    return DawEnvironment(
+        profile=os.getenv("OPENENV_DAW_PROFILE", DEFAULT_PROFILE),
+        backend_factory=resolve_backend(backend) if backend else None,
+    )
 
 
 app = create_app(

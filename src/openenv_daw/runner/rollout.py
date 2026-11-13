@@ -6,16 +6,19 @@ import argparse
 import asyncio
 import json
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 
+from openenv_daw.backends import Backend
 from openenv_daw.env.client import DawEnv
 from openenv_daw.env.environment import DawEnvironment, result_data
+from openenv_daw.sim.profiles import DEFAULT_PROFILE
 from openenv_daw.tasks.model import Task
-from openenv_daw.tasks.store import default_store
+from openenv_daw.tasks.store import TaskStore, default_store
 from openenv_daw.tools import load_instructions
 
 from .client import Policy
@@ -55,8 +58,16 @@ def to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 class InProcessAdapter:
-    def __init__(self) -> None:
-        self.env = DawEnvironment()
+    def __init__(
+        self,
+        store: TaskStore | None = None,
+        profile: str = DEFAULT_PROFILE,
+        backend_factory: Callable[[str], Backend] | None = None,
+        param_mask_prob: float = 0.0,
+    ) -> None:
+        self.env = DawEnvironment(
+            store, profile, backend_factory=backend_factory, param_mask_prob=param_mask_prob
+        )
 
     async def start(self, task_id: str) -> str:
         return self.env.reset(task_id=task_id).intent

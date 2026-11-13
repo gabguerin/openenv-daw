@@ -30,7 +30,7 @@ is needed: the simulator is pure Python and deterministic.
   changing them is scored as damage.
 - **Tasks**: 5 seeded families (`session_setup`, `melody_in_key`, `four_on_floor_beat`,
   `reverb_send`, `mix_balance`), feasible `near_miss` requests that mention infeasible-sounding words, plus about 10% infeasible requests (`submit("blocked")`).
-  Train tasks are generated from seeds; `heldout_v2.jsonl` (default; `OPENENV_DAW_HELDOUT` selects another file, `heldout.jsonl` is v1) uses unseen templates and slot values.
+  Train tasks are generated from seeds; `heldout_v3.jsonl` (default; `OPENENV_DAW_HELDOUT` selects another file, `heldout_v2.jsonl` is frozen as published in 0.1.0) uses unseen templates and slot values.
   Every task carries an oracle solution.
 
 ## Run
@@ -96,3 +96,21 @@ in-process, so it avoids the MCP client overhead and runs at simulator speed. `g
 the episode score; stopping without `submit` is scored as truncated. See `examples/grpo_train.py`.
 
 > Mirror of `daw-agent/packages/openenv-daw` (private monorepo). Send changes there.
+
+
+## Bringing your own DAW (adapter SDK)
+
+`openenv_daw.adapters` lets any DAW be trained against and driven by the same tools:
+
+1. Implement the `Driver` protocol (`read_session`, `apply`, optional native `undo`, `close`) for your DAW.
+2. Describe its devices in a `DeviceMap` YAML; parameters it cannot set go in `unsupported_params`.
+3. Run `assert_driver_conformance(driver_factory)` from `openenv_daw.adapters.testing` against the task suite
+   (a `FakeDriver` shows how).
+4. Register a backend factory under the `openenv_daw.backends` entry point group and serve it with
+   `OPENENV_DAW_BACKEND=<name> openenv-daw-server` (or `openenv-daw serve --backend <name>`).
+
+`MirrorBackend` re-reads the DAW on every call, dry-runs on the simulator, applies one atomic edit, verifies it
+and rolls back on mismatch. Adapters never add tools. Parameter gaps are exposed to the agent as
+`supported: false`; tasks that need an unsupported parameter expect `submit("blocked")`
+(see the `portable_gap` profile). Destructive loading requires the `__openenv_scratch__` marker track.
+The adapter API is provisional until a second driver exists.

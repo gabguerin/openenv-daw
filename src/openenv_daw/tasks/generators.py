@@ -19,6 +19,7 @@ from openenv_daw.backends import SimBackend
 from openenv_daw.music import CLOSED_HAT, KICK, scale_pitches
 from openenv_daw.schema import Session, Track
 from openenv_daw.schema.session import ForeignClip, ForeignDevice, ForeignParam
+from openenv_daw.sim.catalog import load_catalog
 from openenv_daw.tasks.model import Check, OracleStep, Task
 from openenv_daw.tasks.resolve import resolve_for_profile
 
@@ -30,9 +31,6 @@ Parts = dict[str, Any]
 def load_family(family: str) -> dict[str, Any]:
     text = resources.files("openenv_daw.tasks.templates").joinpath(f"{family}.yaml").read_text()
     data = yaml.safe_load(text)
-    extra = resources.files("openenv_daw.tasks.templates").joinpath(f"paraphrased/{family}.yaml")
-    if extra.is_file():  # offline paraphrases of train templates (scripts/paraphrase_templates.py)
-        data["templates"] = data["templates"] + yaml.safe_load(extra.read_text())["templates"]
     return data
 
 
@@ -66,7 +64,6 @@ def _step(tool: str, **args: Any) -> OracleStep:
 
 
 SUBMIT_DONE = _step("submit", status="done")
-SUBMIT_BLOCKED = _step("submit", status="blocked", reason="not possible with the available tools")
 
 
 # --- families: (rng, pool, used) -> Parts ---------------------------------------------------
@@ -407,7 +404,7 @@ _FOREIGN_DEVICES = [
 
 
 def inject_foreign(initial: dict[str, Any] | None, rng: random.Random) -> dict[str, Any]:
-    """Add an untouchable read-only group track (foreign plugin and audio/session clips)."""
+    """Add an untouchable read-only group track (foreign plugin and audio/launcher clips)."""
     s = Session.restore(initial) if initial else Session()
     name, params = rng.choice(_FOREIGN_DEVICES)
     s.tracks.append(
@@ -427,7 +424,7 @@ def inject_foreign(initial: dict[str, Any] | None, rng: random.Random) -> dict[s
                     id=s.next_id("fcl"), name="Vocal Take", kind="audio", length_beats=16.0
                 ),
                 ForeignClip(
-                    id=s.next_id("fcl"), name="Scene Loop", kind="session", length_beats=8.0
+                    id=s.next_id("fcl"), name="Scene Loop", kind="launcher", length_beats=8.0
                 ),
             ],
         )
@@ -450,6 +447,11 @@ def generate(family: str, seed: int, split: Literal["train", "heldout"] = "train
     oracle = parts["oracle"] + [SUBMIT_DONE]
     tools = sorted({o.tool for o in oracle if o.tool != "submit"})
     requires = tools + [c for c in tpl.get("requires", []) if c not in tools]
+    for o in oracle:
+        if o.tool == "set_device_param" and o.args.get("device") in load_catalog():
+            key = f"param:{o.args['device']}.{str(o.args['param']).lower()}"
+            if key not in requires:
+                requires.append(key)
     initial = parts.get("initial")
     tags: list[str] = []
     if random.Random(f"foreign:{family}:{split}:{seed}").random() < FOREIGN_PROB:

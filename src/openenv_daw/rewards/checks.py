@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from openenv_daw.music import MAJOR, MINOR, root_pc, scale_classes
+from openenv_daw.music import MAJOR, MINOR, NUMERALS, root_pc, scale_classes
 from openenv_daw.schema import Session, Track
 
 CheckFn = Callable[[Session, Session, dict[str, Any]], bool]
@@ -14,8 +14,23 @@ CHECKS: dict[str, CheckFn] = {}
 
 
 def check(fn: CheckFn) -> CheckFn:
+    """Register a built-in check under its function name."""
     CHECKS[fn.__name__] = fn
     return fn
+
+
+def register_check(name: str) -> Callable[[CheckFn], CheckFn]:
+    """Register a third-party check. ``name`` must be namespaced (``"pkg.name"``) and unique."""
+
+    def deco(fn: CheckFn) -> CheckFn:
+        if "." not in name:
+            raise ValueError(f"check name {name!r} must be namespaced, e.g. 'mypkg.{name}'")
+        if name in CHECKS:
+            raise ValueError(f"check {name!r} is already registered")
+        CHECKS[name] = fn
+        return fn
+
+    return deco
 
 
 def _track(s: Session, ref: str) -> Track | None:
@@ -229,14 +244,11 @@ def clip_named(s, i, a):
     )
 
 
-_NUMERALS = {"i": 0, "ii": 1, "iii": 2, "iv": 3, "v": 4, "vi": 5, "vii": 6}
-
-
 def chord_pitch_classes(key: str, numeral: str) -> set[int]:
     """Diatonic triad (pitch classes) for a roman numeral in ``key``."""
     root, mode = key.split()
     steps = MAJOR if mode.lower() == "major" else MINOR
-    deg = _NUMERALS[numeral.lower()]
+    deg = NUMERALS[numeral.lower()]
     r = root_pc(root)
     return {(r + steps[(deg + k) % 7]) % 12 for k in (0, 2, 4)}
 

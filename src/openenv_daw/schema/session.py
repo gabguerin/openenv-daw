@@ -7,7 +7,7 @@ import hashlib
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 TrackKind = Literal["midi", "audio", "return", "group"]  # group: read-only (foreign)
 
@@ -54,13 +54,18 @@ class ForeignDevice(BaseModel):
 
 
 class ForeignClip(BaseModel):
-    """An audio or session clip the simulator cannot edit. Readable, never writable."""
+    """An audio or launcher clip the simulator cannot edit. Readable, never writable."""
 
     id: str
     name: str
-    kind: Literal["audio", "session"]
+    kind: Literal["audio", "launcher"]  # launcher: a clip in a clip-launcher / scene grid
     start_beat: float = 0.0
     length_beats: float = 0.0
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _legacy_kind(cls, v: Any) -> Any:
+        return "launcher" if v == "session" else v  # pre-0.2 data
 
 
 class Track(BaseModel):
