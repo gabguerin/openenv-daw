@@ -85,3 +85,5 @@ uv run python -m openenv_daw.runner export rollouts.jsonl --out sft.jsonl
 FastMCP registry (tool names, signatures and docstrings are not duplicated). It calls the simulator
 in-process, so it avoids the MCP client overhead and runs at simulator speed. `get_reward()` returns
 the episode score; stopping without `submit` is scored as truncated. See `examples/grpo_train.py`.
+
+> Mirror of `daw-agent/packages/openenv-daw` (private monorepo). Send changes there.
