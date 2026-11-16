@@ -7,6 +7,7 @@ makes too many consecutive errors."""
 from __future__ import annotations
 
 import os
+import random
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -105,13 +106,15 @@ class DawEnvironment(MCPEnvironment):
     ) -> DawResetObservation:
         if profile is not None and profile != self.profile:
             raise ValueError("the profile is fixed per environment instance; start a new server")
+        if seed is None:  # unseeded resets must not all land on the same task
+            seed = random.SystemRandom().randrange(2**31)
         if task_id is not None:
             task = self.store.get(task_id, self.profile)
         elif index is not None:
             task = self.store.get_task(split, index, self.profile)
         else:
-            task = self.store.sample(split, seed or 0, family, self.profile)
-        task, mask = apply_param_mask(task, self.profile, self.param_mask_prob, seed or 0)
+            task = self.store.sample(split, seed, family, self.profile)
+        task, mask = apply_param_mask(task, self.profile, self.param_mask_prob, seed)
         self.episode = Episode(
             task,
             self.profile,
@@ -134,6 +137,7 @@ class DawEnvironment(MCPEnvironment):
             metadata={
                 "family": task.family,
                 "split": task.split,
+                "seed": seed,
                 "toolset_version": TOOLSET_VERSION,
                 "schema_version": SCHEMA_VERSION,
             },
@@ -162,9 +166,11 @@ class DawEnvironment(MCPEnvironment):
         return obs
 
     def _check_open(self, action: Action) -> None:
+        if not isinstance(action, CallToolAction):
+            return  # listing tools is allowed at any time (the web UI does it before reset)
         if self.episode is None:
             raise RuntimeError("call reset before step")
-        if self.episode.done and isinstance(action, CallToolAction):
+        if self.episode.done:
             raise RuntimeError("episode is over; call reset")
 
     def step(self, action: Action, timeout_s: float | None = None, **kwargs: Any) -> Observation:
@@ -189,6 +195,35 @@ class DawEnvironment(MCPEnvironment):
         return Observation(
             metadata={"error": f"unsupported action {type(action).__name__}; use CallToolAction"}
         )
+
+    # --- web interface (stock Playground tab) -----------------------------------------
+    def render_web(self, observation: dict[str, Any]) -> str | None:
+        ep = self.episode
+        if ep is None:
+            return None
+        import html
+
+        from openenv_daw.server.ui import render
+
+        final = ep.score.as_dict() if ep.score else None
+        return (
+            '<p class="dw-mut">This Playground is one environment shared by every visitor; '
+            "use the DAW Studio tab for your own session.</p>"
+            f"<h3>{html.escape(ep.task.intent)}</h3>"
+            + render.session_html(ep.backend.session)
+            + render.checks_html(ep.task, ep.initial, ep.backend.session, ep.error_count, final)
+        )
+
+    def web_actions(self, observation: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+        def call(tool: str, **args: Any) -> dict[str, Any]:
+            return {"type": "call_tool", "tool_name": tool, "arguments": args}
+
+        return [
+            ("get_session", call("get_session")),
+            ("list_devices", call("list_devices")),
+            ("submit done", call("submit", status="done")),
+            ("submit blocked", call("submit", status="blocked", reason="not possible")),
+        ]
 
     @property
     def state(self) -> DawState:

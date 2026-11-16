@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -38,6 +38,10 @@ class StepOut:
 
 class EnvAdapter(Protocol):
     async def start(self, task_id: str) -> str: ...
+
+    @property
+    def profile(self) -> str: ...
+
     async def tools(self) -> list[dict[str, Any]]: ...
     async def call(self, name: str, args: dict[str, Any]) -> StepOut: ...
     async def close(self) -> None: ...
@@ -69,6 +73,17 @@ class InProcessAdapter:
             store, profile, backend_factory=backend_factory, param_mask_prob=param_mask_prob
         )
 
+    @classmethod
+    def from_env(cls, env: DawEnvironment) -> InProcessAdapter:
+        """Wrap an existing environment (for example a UI session's)."""
+        self = cls.__new__(cls)
+        self.env = env
+        return self
+
+    @property
+    def profile(self) -> str:
+        return self.env.profile
+
     async def start(self, task_id: str) -> str:
         return self.env.reset(task_id=task_id).intent
 
@@ -93,6 +108,7 @@ class WebSocketAdapter:
     def __init__(self, url: str) -> None:
         self.client = DawEnv(base_url=url)
         self._open = False
+        self.profile = DEFAULT_PROFILE
 
     async def _ensure(self) -> None:
         if not self._open:
@@ -101,7 +117,9 @@ class WebSocketAdapter:
 
     async def start(self, task_id: str) -> str:
         await self._ensure()
-        return (await self.client.reset(task_id=task_id)).observation.intent
+        obs = (await self.client.reset(task_id=task_id)).observation
+        self.profile = obs.profile or DEFAULT_PROFILE
+        return obs.intent
 
     async def tools(self) -> list[dict[str, Any]]:
         await self._ensure()
@@ -126,23 +144,26 @@ def _parse_args(raw: Any) -> dict[str, Any]:
         return {}
 
 
-async def run_episode(
+async def iter_episode(
     policy: Policy, env: EnvAdapter, task_id: str, max_turns: int = 40
-) -> dict[str, Any]:
-    """Run one episode. Returns a record with chat ``messages``, ``tools`` and the verified
-    outcome (reward, success, step log, action sequence)."""
+) -> AsyncIterator[dict[str, Any]]:
+    """Run one episode, yielding events: ``start`` (intent, tools), ``assistant`` (message),
+    ``call`` (name, args, out, step) after every tool call and finally ``end`` (the record
+    ``run_episode`` returns: chat ``messages``, ``tools`` and the verified outcome)."""
     intent = await env.start(task_id)
     tools = to_openai_tools(await env.tools())
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": load_instructions()},
+        {"role": "system", "content": load_instructions(getattr(env, "profile", DEFAULT_PROFILE))},
         {"role": "user", "content": intent},
     ]
+    yield {"type": "start", "intent": intent, "tools": tools}
     final = StepOut(None, None, False, None, {})
     actions: list[dict[str, Any]] = []
     nudges = 0
     for _ in range(max_turns):
         msg = await policy.complete(messages, tools)
         messages.append(msg)
+        yield {"type": "assistant", "message": msg}
         calls = msg.get("tool_calls") or []
         if not calls:
             if nudges >= MAX_NUDGES:
@@ -158,6 +179,7 @@ async def run_episode(
                 final = await env.call(name, args)
                 actions.append({"tool": name, "args": args})
                 out = final.data or {"ok": False, "error": final.error}
+                yield {"type": "call", "name": name, "args": args, "out": out, "step": final}
             messages.append(
                 {
                     "role": "tool",
@@ -169,22 +191,36 @@ async def run_episode(
             break
     meta = final.metadata
     score = meta.get("score") or {}
-    return {
-        "task_id": task_id,
-        "model": getattr(policy, "name", ""),
-        "intent": intent,
-        "messages": messages,
-        "tools": tools,
-        "reward": final.reward if final.done else 0.0,
-        "success": bool(meta.get("success")) if final.done else False,
-        "done": final.done,
-        "termination": meta.get("termination", "no_submit"),
-        "failed_checks": meta.get("failed_checks", []),
-        "error_count": score.get("error_count"),
-        "step_log": meta.get("step_log", []),
-        "actions": actions,
-        "state_hash": meta.get("state_hash"),
+    yield {
+        "type": "end",
+        "record": {
+            "task_id": task_id,
+            "model": getattr(policy, "name", ""),
+            "intent": intent,
+            "messages": messages,
+            "tools": tools,
+            "reward": final.reward if final.done else 0.0,
+            "success": bool(meta.get("success")) if final.done else False,
+            "done": final.done,
+            "termination": meta.get("termination", "no_submit"),
+            "failed_checks": meta.get("failed_checks", []),
+            "error_count": score.get("error_count"),
+            "step_log": meta.get("step_log", []),
+            "actions": actions,
+            "state_hash": meta.get("state_hash"),
+        },
     }
+
+
+async def run_episode(
+    policy: Policy, env: EnvAdapter, task_id: str, max_turns: int = 40
+) -> dict[str, Any]:
+    """Run one episode and return its record (see ``iter_episode``)."""
+    record: dict[str, Any] = {}
+    async for ev in iter_episode(policy, env, task_id, max_turns):
+        if ev["type"] == "end":
+            record = ev["record"]
+    return record
 
 
 def select_tasks(split: str, n: int, start: int = 0, family: str | None = None) -> list[Task]:
@@ -246,6 +282,15 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--url", help="WebSocket env server; default is in-process")
     r.add_argument("--out", default="outputs/rollouts.jsonl")
     r.add_argument("--temperature", type=float, default=0.7)
+    v = sub.add_parser("eval", help="evaluate a policy and write report.json / report.md")
+    v.add_argument("--tasks", default="heldout", help="'heldout' or a JSONL path")
+    v.add_argument(
+        "--policy", default="openai", choices=["openai", "oracle", "noop", "blocked", "random"]
+    )
+    v.add_argument("--samples", type=int, default=1)
+    v.add_argument("--concurrency", type=int, default=4)
+    v.add_argument("--url")
+    v.add_argument("--out", default="outputs/eval")
     e = sub.add_parser("export", help="filter successful rollouts into SFT JSONL")
     e.add_argument("rollouts")
     e.add_argument("out")
@@ -253,6 +298,21 @@ def main(argv: list[str] | None = None) -> None:
     if a.cmd == "export":
         s = export_sft(Path(a.rollouts), Path(a.out))
         print(json.dumps(s))
+        return
+    if a.cmd == "eval":
+        from .report import evaluate, load_task_set, report_markdown
+
+        rep = asyncio.run(
+            evaluate(
+                a.policy,
+                load_task_set(a.tasks),
+                Path(a.out),
+                a.samples,
+                a.concurrency,
+                a.url,
+            )
+        )
+        print(report_markdown(rep))
         return
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)

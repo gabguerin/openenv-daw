@@ -118,3 +118,12 @@ async def test_step_async_matches_sync():
     for st in t.oracle:
         last = await env.step_async(CallToolAction(tool_name=st.tool, arguments=st.args))
     assert last.done and last.reward == 1.0
+
+
+def test_unseeded_reset_varies_and_reports_seed():
+    env = DawEnvironment()
+    obs = [env.reset() for _ in range(12)]
+    assert len({o.task_id for o in obs}) > 1
+    seed = obs[0].metadata["seed"]
+    again = env.reset(seed=seed)
+    assert again.task_id == obs[0].task_id
