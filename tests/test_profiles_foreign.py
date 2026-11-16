@@ -66,7 +66,7 @@ def test_heldout_default_is_v4_and_older_frozen(monkeypatch):
     from openenv_daw.tasks.store import heldout_path, load_heldout
 
     monkeypatch.delenv("OPENENV_DAW_HELDOUT", raising=False)
-    assert heldout_path().name == "heldout_v4.jsonl"
+    assert heldout_path().name == "heldout_v5.jsonl"
     v4 = load_heldout()
     monkeypatch.setenv("OPENENV_DAW_HELDOUT", "heldout_v3.jsonl")
     v3 = load_heldout()

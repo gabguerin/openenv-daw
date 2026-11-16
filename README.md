@@ -38,16 +38,22 @@ is needed: the simulator is pure Python and deterministic.
   `requires` (tool names plus tags such as `group_tracks`, `automation`, `third_party_plugin`,
   `render`); `resolve_for_profile(task, profile)` turns a task whose requirements are not covered
   into a "blocked" one, so the JSONL stays profile-neutral. `TaskStore.sample/get` take a profile.
+- **Sounds and plugins**: the agent never browses a DAW. `list_devices(query="sub bass")` searches
+  a canonical library (`catalog/library.yaml`: synth presets, drum kits, effect presets, racks,
+  plugins) and `insert_device(device=<id>)` loads a hit. Presets load as their catalog device with
+  editable parameters; racks and plugins load read-only. Plugins need the `third_party_plugin`
+  capability (profile `portable_plugins`). Adapters map library ids to the DAW's items in their
+  `DeviceMap` (`library:`); unmapped ids are hidden from the agent.
 - **Foreign objects**: about 20% of tasks start with a read-only group track holding a foreign
   plugin and audio/session clips; they are readable, any mutation returns `unsupported`, and
   changing them is scored as damage.
 - **Tasks**: seeded families `session_setup`, `melody_in_key`, `four_on_floor_beat`, `reverb_send`,
   `mix_balance`, `chord_progression`, `edit_notes`, `device_tweak` (display-value tolerance of 5%),
-  `disambiguation` (duplicate clip names), `compositional` (chains of 2-3 families; an infeasible part
+  `disambiguation` (duplicate clip names), `load_sound` (named or described presets, racks, plugins), `compositional` (chains of 2-3 families; an infeasible part
   blocks the whole task), feasible `near_miss` requests that mention infeasible-sounding words, and
   about 10% infeasible requests (`submit("blocked")`). Tasks carry difficulty tags `L1`-`L3`.
-  Train tasks are generated from seeds; `heldout_v4.jsonl` (145 tasks, default; `OPENENV_DAW_HELDOUT`
-  selects another file; v2 and v3 are frozen) uses unseen templates, slot values and, for
+  Train tasks are generated from seeds; `heldout_v5.jsonl` (157 tasks, default; `OPENENV_DAW_HELDOUT`
+  selects another file; v2, v3 and v4 are frozen) uses unseen templates, slot values and, for
   `compositional`, unseen family combinations.
   Every task carries an oracle solution.
 

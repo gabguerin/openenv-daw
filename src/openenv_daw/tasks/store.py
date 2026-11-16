@@ -40,7 +40,7 @@ class TaskStore:
             return resolve_for_profile(self._by_id[task_id], profile)
         m = _ID.match(task_id)
         if m and m["split"] == "train" and m["family"] in families():
-            return resolve_for_profile(generate(m["family"], int(m["seed"]), "train"), profile)
+            return generate(m["family"], int(m["seed"]), "train", profile)
         raise KeyError(f"unknown task {task_id!r}")
 
     def sample(
@@ -65,13 +65,13 @@ class TaskStore:
         rng = random.Random(f"family:{seed}")
         fams = families()
         fam = family or rng.choices(list(fams), weights=list(fams.values()))[0]
-        task = generate(fam, seed, "train")
+        task = generate(fam, seed, "train", profile)
         for i in range(1, 200):
             if set(tags or ()) <= set(task.tags):
                 break
             rng = random.Random(f"family:{seed}:{i}")
             fam = family or rng.choices(list(fams), weights=list(fams.values()))[0]
-            task = generate(fam, seed + i * 7919, "train")
+            task = generate(fam, seed + i * 7919, "train", profile)
         return resolve_for_profile(task, profile)
 
     def get_task(self, split: str, index: int, profile: str = DEFAULT_PROFILE) -> Task:
@@ -80,7 +80,7 @@ class TaskStore:
         return self.sample("train", index, profile=profile)
 
 
-HELDOUT_DEFAULT = "heldout_v4.jsonl"  # v2 and v3 are frozen (v2 as published in 0.1.0)
+HELDOUT_DEFAULT = "heldout_v5.jsonl"  # v2, v3 and v4 are frozen (v2 as published in 0.1.0)
 
 
 def heldout_path() -> Path:

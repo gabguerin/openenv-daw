@@ -1,6 +1,6 @@
 """Build the fixed heldout split (unseen templates + unseen slot values) as JSONL.
 
-uv run python scripts/build_heldout.py [out.jsonl]   # default: heldout_v4.jsonl
+uv run python scripts/build_heldout.py [out.jsonl]   # default: heldout_v5.jsonl
 """
 
 from __future__ import annotations
@@ -23,10 +23,11 @@ PER_FAMILY = {
     "device_tweak": 14,
     "disambiguation": 12,
     "compositional": 25,
+    "load_sound": 12,
 }
 
 
-def main(out: str = "src/openenv_daw/tasks/heldout_v4.jsonl") -> None:
+def main(out: str = "src/openenv_daw/tasks/heldout_v5.jsonl") -> None:
     seen: set[str] = set()
     lines = []
     for fam in families():

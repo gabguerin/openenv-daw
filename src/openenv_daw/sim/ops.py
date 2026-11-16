@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openenv_daw.schema import Clip, Device, ForeignDevice, Note, Session, Track
+from openenv_daw.schema import Clip, Device, ForeignDevice, ForeignParam, Note, Session, Track
 from openenv_daw.schema.units import (
     DB_MAX,
     DB_MIN,
@@ -24,7 +24,7 @@ from openenv_daw.schema.units import (
     snap,
 )
 
-from .catalog import DeviceSpec, load_catalog
+from .catalog import DeviceSpec, find_item, load_catalog, search_devices
 from .errors import conflict, invalid, not_found, unsupported
 
 # --- resolution ----------------------------------------------------------------------------
@@ -119,6 +119,8 @@ def clip_view(c: Clip, track: Track | None = None, notes: bool = False) -> dict[
 
 def device_view(d: Device, params: bool = False) -> dict[str, Any]:
     v: dict[str, Any] = {"id": d.id, "device": d.device, "name": d.name, "role": d.role}
+    if d.preset:
+        v["preset"] = d.preset
     if params:
         v["params"] = param_infos(d)
     return v
@@ -161,6 +163,7 @@ def track_view(t: Track, detail: bool = True, notes: bool = False) -> dict[str, 
             {
                 "id": d.id,
                 "name": d.name,
+                **({"item": d.item} if d.item else {}),
                 **({"params": [p.model_dump() for p in d.params]} if detail else {}),
             }
             for d in t.foreign_devices
@@ -392,41 +395,107 @@ def set_send(s: Session, track: str, return_track: str, level_db: float) -> dict
     return {"ok": True, "track": t.id, "return_track": r.id, "level_db": level}
 
 
-def list_devices(s: Session, role: str | None = None) -> dict[str, Any]:
+def list_devices(
+    s: Session, role: str | None = None, query: str | None = None, _unavailable: frozenset[str] = frozenset()
+) -> dict[str, Any]:
+    """Without ``query``: the catalog devices. With ``query``: the best matches among catalog
+    devices, presets, racks and plugins (pass a hit's ``device`` to insert_device)."""
     if role not in (None, "instrument", "audio_fx"):
         raise invalid("role must be instrument or audio_fx")
-    devs = [
-        {"device": d.id, "role": d.role, "description": d.description, "params": list(d.params)}
-        for d in load_catalog().values()
-        if role is None or d.role == role
-    ]
-    return {"ok": True, "devices": devs}
+    cat = load_catalog()
+    if query is None or not query.strip():
+        devs = [
+            {"device": d.id, "role": d.role, "description": d.description, "params": list(d.params)}
+            for d in cat.values()
+            if role is None or d.role == role
+        ]
+        return {
+            "ok": True,
+            "devices": devs,
+            "hint": "pass query (for example 'sub bass', 'drum kit', 'serum') to find presets, "
+            "sounds and plugins",
+        }
+    hits = search_devices(query, role, exclude=_unavailable)
+    for h in hits:
+        base = h.get("base") or (h["device"] if h["kind"] == "device" else None)
+        if base:
+            h["params"] = list(cat[base].params)
+    out: dict[str, Any] = {"ok": True, "devices": hits, "query": query}
+    if not hits:
+        out["hint"] = "no match; try other words (a genre, instrument type or plugin name)"
+    return out
+
+
+def _suggest(ref: str, unavailable: frozenset[str]) -> str:
+    hits = search_devices(ref, limit=5, exclude=unavailable)
+    if not hits:
+        return "call list_devices (add a query to search presets and plugins)"
+    return "did you mean " + ", ".join(f"{h['device']} ({h['name']})" for h in hits) + "?"
 
 
 def insert_device(
-    s: Session, track: str, device: str, position: int | None = None
+    s: Session,
+    track: str,
+    device: str,
+    position: int | None = None,
+    _unavailable: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     t = _writable(find_track(s, track))
     spec: DeviceSpec | None = load_catalog().get(device)
-    if spec is None:
-        raise not_found(f"no device {device!r}; call list_devices")
-    if spec.role == "instrument":
+    item = None if spec is not None else find_item(device)
+    if spec is None and item is None:
+        raise not_found(f"no device {device!r}; {_suggest(device, _unavailable)}")
+    if item is not None:
+        if item.id in _unavailable:
+            raise unsupported(f"{item.name!r} ({item.id}) cannot be loaded in this DAW")
+        if item.base is not None:
+            spec = load_catalog()[item.base]
+    role = item.role if item is not None else spec.role  # type: ignore[union-attr]
+    if role == "instrument":
         if t.kind != "midi":
             raise invalid(f"instruments go on midi tracks; {t.name!r} is a {t.kind} track")
-        if any(d.role == "instrument" for d in t.devices):
+        if any(d.role == "instrument" for d in t.devices) or any(
+            d.role == "instrument" for d in t.foreign_devices
+        ):
             raise conflict(f"track {t.name!r} already has an instrument")
+    if item is not None and spec is None:  # a rack or plugin: loads as a read-only device
+        fd = ForeignDevice(
+            id=s.next_id("fdv"),
+            name=item.name,
+            params=[ForeignParam(name=n, display=d) for n, d in item.params],
+            item=item.id,
+            role=item.role,  # type: ignore[arg-type]
+        )
+        t.foreign_devices.append(fd)
+        return {
+            "ok": True,
+            "track": t.id,
+            "position": len(t.foreign_devices) - 1,
+            "device": {
+                "id": fd.id,
+                "name": fd.name,
+                "role": item.role,
+                "item": item.id,
+                "foreign": True,
+            },
+        }
+    assert spec is not None
     n_instr = sum(1 for d in t.devices if d.role == "instrument")
-    if spec.role == "instrument":
+    if role == "instrument":
         pos = 0
     else:
         pos = len(t.devices) if position is None else int(position)
         pos = int(clamp(pos, n_instr, len(t.devices)))
+    params = {n: p.default for n, p in spec.params.items()}
+    if item is not None:
+        params.update(item.overrides)
     dev = Device(
         id=s.next_id("dev"),
         device=spec.id,
-        name=spec.id,
-        role=spec.role,  # type: ignore[arg-type]
-        params={n: p.default for n, p in spec.params.items()},
+        name=item.name if item is not None else spec.id,
+        role=role,  # type: ignore[arg-type]
+        params=params,
+        preset=item.id if item is not None else None,
     )
     t.devices.insert(pos, dev)
     return {"ok": True, "track": t.id, "position": pos, "device": device_view(dev, params=True)}

@@ -13,7 +13,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Literal
 
-from openenv_daw.schema import Clip, Device, Note, Session, Track
+from openenv_daw.schema import Clip, Device, ForeignDevice, ForeignParam, Note, Session, Track
+from openenv_daw.sim.catalog import find_item
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,18 @@ class AddDevice:
     role: Literal["instrument", "audio_fx"]
     position: int
     params: dict[str, float] = field(default_factory=dict)
+    preset: str | None = None  # library id: the DAW should load that named preset
+
+
+@dataclass(frozen=True)
+class AddForeignDevice:
+    """A library rack or plugin: loaded by name, read-only afterwards (no parameter edits)."""
+
+    id: str
+    track: str
+    item: str  # library id
+    name: str
+    role: Literal["instrument", "audio_fx"]
 
 
 @dataclass(frozen=True)
@@ -144,6 +157,7 @@ Change = (
     | UpdateClip
     | SetNotes
     | AddDevice
+    | AddForeignDevice
     | RemoveDevice
     | SetParam
 )
@@ -238,11 +252,18 @@ def _diff_track(
             out.append(RemoveDevice(did, new.id))
     for pos, d in enumerate(new.devices):
         if d.id not in od:
-            out.append(AddDevice(d.id, new.id, d.device, d.name, d.role, pos, dict(d.params)))
+            out.append(
+                AddDevice(d.id, new.id, d.device, d.name, d.role, pos, dict(d.params), d.preset)
+            )
         else:
             for k, v in d.params.items():
                 if od[d.id].params.get(k) != v:
                     out.append(SetParam(d.id, new.id, k, v))
+
+    old_foreign = {d.id for d in old.foreign_devices}
+    for fd in new.foreign_devices:
+        if fd.id not in old_foreign and fd.item and fd.role:
+            out.append(AddForeignDevice(fd.id, new.id, fd.item, fd.name, fd.role))
 
 
 def _track(s: Session, tid: str) -> Track:
@@ -322,7 +343,22 @@ def apply_changes(session: Session, changes: list[Change]) -> Session:
                         name=ch.name,
                         role=ch.role,
                         params=dict(ch.params),
+                        preset=ch.preset,
                     ),
+                )
+            case AddForeignDevice():
+                _bump(s, "fdv", ch.id)
+                lib = find_item(ch.item)
+                _track(s, ch.track).foreign_devices.append(
+                    ForeignDevice(
+                        id=ch.id,
+                        name=ch.name,
+                        params=[
+                            ForeignParam(name=n, display=d) for n, d in (lib.params if lib else ())
+                        ],
+                        item=ch.item,
+                        role=ch.role,
+                    )
                 )
             case RemoveDevice():
                 t = _track(s, ch.track)

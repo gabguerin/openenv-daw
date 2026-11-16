@@ -13,5 +13,6 @@ Conventions:
 - Tracks and clips can be referenced by id (for example trk_1) or by unique name.
 <<set_send>>- Return tracks (kind "return") host shared effects; send audio to them with set_send.
 <<insert_midi_notes>>- Drum kits use General MIDI pitches: kick 36, snare 38, clap 39, closed hat 42, open hat 46.
+<<insert_device>>- To load a named sound, preset, drum kit or plugin, call list_devices with a query, then insert_device with the id it returns. Never invent device ids; if nothing matches, make no changes and submit blocked.
 <<set_device_param>>- Device parameters may be marked supported=false (get_device_params, list_devices): this DAW cannot change them. Check before changing anything; if the request needs one, make no changes and submit blocked.
 - A tool result with ok=false contains an error code and message. Read it, fix the call and try again.

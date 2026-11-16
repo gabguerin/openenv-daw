@@ -37,6 +37,7 @@ class Device(BaseModel):
     name: str
     role: Literal["instrument", "audio_fx"]
     params: dict[str, float] = Field(default_factory=dict)  # normalized 0..1
+    preset: str | None = None  # library id of the preset this device was loaded from
 
 
 class ForeignParam(BaseModel):
@@ -51,6 +52,8 @@ class ForeignDevice(BaseModel):
     id: str
     name: str
     params: list[ForeignParam] = Field(default_factory=list)
+    item: str | None = None  # library id when the agent loaded it (rack or plugin)
+    role: Literal["instrument", "audio_fx"] | None = None  # known for library items only
 
 
 class ForeignClip(BaseModel):
@@ -108,5 +111,12 @@ class Session(BaseModel):
             for k in ("foreign_devices", "foreign_clips"):
                 if not t[k]:
                     del t[k]
+            for d in t["devices"]:  # so are unset library fields (schema 1.1)
+                if d["preset"] is None:
+                    del d["preset"]
+            for fd in t.get("foreign_devices", ()):
+                for k in ("item", "role"):
+                    if fd[k] is None:
+                        del fd[k]
         blob = json.dumps(data, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode()).hexdigest()

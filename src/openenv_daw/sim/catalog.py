@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from functools import cache
 from importlib import resources
+from typing import Any
 
 import yaml
 
@@ -78,3 +80,123 @@ def load_catalog() -> dict[str, DeviceSpec]:
         }
         out[did] = DeviceSpec(did, d["role"], d["description"], params)
     return out
+
+
+# --- library: named presets, racks and plugins -------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LibraryItem:
+    id: str
+    name: str
+    kind: str  # preset | rack | plugin
+    role: str  # instrument | audio_fx
+    base: str | None = None  # catalog device a preset is built on
+    tags: tuple[str, ...] = ()
+    overrides: dict[str, float] = field(default_factory=dict)  # normalized 0..1
+    params: tuple[tuple[str, str], ...] = ()  # (name, display) of read-only items
+
+
+@cache
+def load_library() -> dict[str, LibraryItem]:
+    raw = yaml.safe_load(
+        resources.files("openenv_daw.catalog").joinpath("library.yaml").read_text()
+    )
+    cat = load_catalog()
+    out: dict[str, LibraryItem] = {}
+    names: set[str] = set()
+    for iid, d in raw["items"].items():
+        if iid in cat:
+            raise ValueError(f"library id {iid!r} clashes with a catalog device")
+        kind = d["kind"]
+        base = d.get("base")
+        if kind == "preset":
+            if base not in cat:
+                raise ValueError(f"library {iid!r}: unknown base {base!r}")
+            unknown = set(d.get("overrides", {})) - set(cat[base].params)
+            if unknown:
+                raise ValueError(f"library {iid!r}: unknown params {sorted(unknown)}")
+            role = cat[base].role
+        elif kind in ("rack", "plugin"):
+            base, role = None, d["role"]
+        else:
+            raise ValueError(f"library {iid!r}: unknown kind {kind!r}")
+        if d["name"].lower() in names:
+            raise ValueError(f"library name {d['name']!r} is used twice")
+        names.add(d["name"].lower())
+        out[iid] = LibraryItem(
+            id=iid,
+            name=d["name"],
+            kind=kind,
+            role=role,
+            base=base,
+            tags=tuple(str(t).lower() for t in d.get("tags", ())),  # YAML reads 808 as an int
+            overrides={k: float(v) for k, v in d.get("overrides", {}).items()},
+            params=tuple((p["name"], str(p["display"])) for p in d.get("params", ())),
+        )
+    return out
+
+
+def _tokens(text: str) -> list[str]:
+    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t]
+
+
+def find_item(ref: str) -> LibraryItem | None:
+    """A library item by id or exact (case-insensitive) name."""
+    lib = load_library()
+    if ref in lib:
+        return lib[ref]
+    low = ref.strip().lower()
+    return next((i for i in lib.values() if i.name.lower() == low), None)
+
+
+def search_devices(
+    query: str, role: str | None = None, limit: int = 8, exclude: frozenset[str] = frozenset()
+) -> list[dict[str, Any]]:
+    """Catalog devices and library items ranked by how well ``query`` matches their id, name and
+    tags. Hits are ``{device, name, role, kind, base?}``; ``device`` is what insert_device takes.
+    ``exclude``: library ids that are unavailable (not loadable in this DAW or profile)."""
+    q = _tokens(query)
+    rows: list[tuple[int, str, dict[str, Any]]] = []
+    entries: list[tuple[dict[str, Any], list[str], list[str]]] = []
+    for d in load_catalog().values():
+        entries.append(
+            (
+                {"device": d.id, "name": d.id, "role": d.role, "kind": "device"},
+                _tokens(d.id),
+                _tokens(d.description),
+            )
+        )
+    for i in load_library().values():
+        if i.id in exclude:
+            continue
+        row = {"device": i.id, "name": i.name, "role": i.role, "kind": i.kind}
+        if i.base:
+            row["base"] = i.base
+        entries.append((row, _tokens(i.id) + _tokens(i.name), list(i.tags) + _tokens(i.base or "")))
+    for row, name_toks, tag_toks in entries:
+        if role and row["role"] != role:
+            continue
+        score = 0
+        for t in q:
+            if t in name_toks:
+                score += 3
+            elif t in tag_toks:
+                score += 2
+            elif any(t in x for x in name_toks + tag_toks if len(t) >= 3):
+                score += 1
+        if q and score:
+            if " ".join(q) == " ".join(_tokens(row["name"])):
+                score += 5
+            rows.append((score, row["device"], row))
+    rows.sort(key=lambda r: (-r[0], r[1]))
+    return [r[2] for r in rows[:limit]]
+
+
+def unavailable_items(capabilities: frozenset[str], masked: frozenset[str]) -> frozenset[str]:
+    """Library ids that cannot be loaded: plugins without the ``third_party_plugin`` capability
+    and every ``item:<id>`` entry of ``masked`` (items the DAW has no mapping for)."""
+    out = {i.id for i in load_library().values() if i.kind == "plugin"}
+    if "third_party_plugin" in capabilities:
+        out = set()
+    return frozenset(out | {m[5:] for m in masked if m.startswith("item:")})

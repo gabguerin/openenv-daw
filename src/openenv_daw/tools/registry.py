@@ -207,13 +207,17 @@ def build_server(
         return call("set_send", track=track, return_track=return_track, level_db=level_db)
 
     @tool
-    def list_devices(role: Literal["instrument", "audio_fx"] | None = None) -> Result:
-        """List the devices that can be inserted, with their parameter names.
+    def list_devices(
+        role: Literal["instrument", "audio_fx"] | None = None, query: str | None = None
+    ) -> Result:
+        """List the devices that can be inserted, with their parameter names. Pass a query to
+        search named presets, sounds, drum kits and plugins (for example "sub bass").
 
         Args:
             role: Only instruments or only audio effects.
+            query: Words to search for; each hit's "device" is what insert_device takes.
         """
-        return call("list_devices", role=role)
+        return call("list_devices", role=role, query=query)
 
     @tool
     def insert_device(track: str, device: str, position: int | None = None) -> Result:
@@ -222,7 +226,8 @@ def build_server(
 
         Args:
             track: Track id or name.
-            device: Device id from list_devices, for example "simple_synth" or "reverb".
+            device: Device id from list_devices, for example "simple_synth", "reverb" or a
+                preset or plugin id found with list_devices(query=...).
             position: Chain position for effects (default: end of chain).
         """
         return call("insert_device", track=track, device=device, position=position)

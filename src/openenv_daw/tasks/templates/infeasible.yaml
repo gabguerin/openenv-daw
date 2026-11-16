@@ -3,7 +3,8 @@ weight: 0.10
 slots:
   names: {train: [Drums, Bass, Lead, Pad, Vocals], heldout: [Keys, Strings, Perc]}
   group: {train: [Rhythm, Instruments, Bus A], heldout: [Stems, Group 1]}
-  plugin: {train: [Serum, Massive, Kontakt, Omnisphere], heldout: [Vital, Pigments, Diva]}
+  # plugins outside the library (library plugins load with the third_party_plugin capability)
+  plugin: {train: [Massive, Kontakt, Omnisphere, Sylenth1], heldout: [Diva, Reaktor, Kontakt]}
 templates:
   - {id: t1, requires: [group_tracks], split: train, text: "Group the {a} and {b} tracks into a folder called {group}."}
   - {id: t2, requires: [automation], split: train, text: "Draw a filter cutoff automation on {a} that rises over 8 bars."}

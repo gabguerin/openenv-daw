@@ -7,6 +7,7 @@ from typing import Any
 
 from openenv_daw.schema import Session
 from openenv_daw.sim import ops
+from openenv_daw.sim.catalog import unavailable_items
 from openenv_daw.sim.errors import SimError, unsupported
 from openenv_daw.sim.profiles import (
     DEFAULT_PROFILE,
@@ -64,6 +65,9 @@ class SimBackend:
             try:
                 if self.masked and tool == "set_device_param":
                     self._reject_masked(args)
+                args = {k: v for k, v in args.items() if not k.startswith("_")}
+                if tool in ("list_devices", "insert_device"):
+                    args["_unavailable"] = unavailable_items(self.capabilities, self.masked)
                 result = fn(self._session, **args)
             except TypeError as e:  # bad/missing kwargs
                 raise SimError("invalid_args", str(e)) from None
@@ -102,7 +106,8 @@ class SimBackend:
             return result
         elif tool == "list_devices":
             for d in result["devices"]:
-                gaps = [p for p in d["params"] if f"{d['device']}.{p}" in self.masked]
+                dev = d.get("base") or d["device"]
+                gaps = [p for p in d.get("params", ()) if f"{dev}.{p}" in self.masked]
                 if gaps:
                     d["unsupported_params"] = gaps
         return result

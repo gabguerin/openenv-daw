@@ -1,0 +1,245 @@
+# Canonical, DAW-agnostic library of named sounds, presets and plugins. The agent finds entries with
+# list_devices(query=...) and loads them with insert_device(device=<id>); it never browses folders.
+# Adapters map each id to the DAW's own item (see openenv_daw.adapters.devices); an unmapped id is
+# reported as unavailable.
+#
+# kind: preset  built on a catalog device (`base`); loads as that device with `overrides`
+#               (normalized 0..1) applied, so its parameters stay editable.
+#       rack    a native DAW rack or instrument without catalog parameters: loads read-only.
+#       plugin  a third-party plugin: loads read-only and needs the `third_party_plugin`
+#               capability (the default `portable` profile does not offer it).
+# waveform steps: saw 0.125, square 0.375, sine 0.625, triangle 0.875.
+items:
+  # --- synth presets (simple_synth) -----------------------------------------------------------
+  sub_bass:
+    name: Sub Bass
+    kind: preset
+    base: simple_synth
+    tags: [bass, sub, low, deep, 808]
+    overrides: {waveform: 0.625, cutoff: 0.45, resonance: 0.0, attack: 0.1, release: 0.4}
+  hip_hop_bass:
+    name: Hip-Hop Bass
+    kind: preset
+    base: simple_synth
+    tags: [bass, hip-hop, rap, trap, low]
+    overrides: {waveform: 0.375, cutoff: 0.5, resonance: 0.1, attack: 0.05, release: 0.35}
+  pixel_bass:
+    name: Pixelated Bass
+    kind: preset
+    base: simple_synth
+    tags: [bass, chiptune, 8-bit, retro, square]
+    overrides: {waveform: 0.375, cutoff: 0.65, resonance: 0.2, attack: 0.02, release: 0.2}
+  growl_bass:
+    name: Growl Bass
+    kind: preset
+    base: simple_synth
+    tags: [bass, dubstep, aggressive, saw, dirty]
+    overrides: {waveform: 0.125, cutoff: 0.55, resonance: 0.55, detune: 0.3, release: 0.3}
+  robot_lead:
+    name: Robot Lead
+    kind: preset
+    base: simple_synth
+    tags: [lead, synth, robot, electronic, square]
+    overrides: {waveform: 0.375, cutoff: 0.8, resonance: 0.35, attack: 0.05, release: 0.3}
+  bright_lead:
+    name: Bright Lead
+    kind: preset
+    base: simple_synth
+    tags: [lead, synth, bright, saw, melody]
+    overrides: {waveform: 0.125, cutoff: 0.9, resonance: 0.15, detune: 0.2, release: 0.35}
+  soft_lead:
+    name: Soft Lead
+    kind: preset
+    base: simple_synth
+    tags: [lead, soft, mellow, smooth, melody]
+    overrides: {waveform: 0.875, cutoff: 0.6, resonance: 0.05, attack: 0.2, release: 0.45}
+  warm_pad:
+    name: Warm Pad
+    kind: preset
+    base: simple_synth
+    tags: [pad, warm, ambient, soft, atmosphere]
+    overrides: {waveform: 0.125, cutoff: 0.5, resonance: 0.1, attack: 0.7, release: 0.8, detune: 0.25}
+  glass_pad:
+    name: Glass Pad
+    kind: preset
+    base: simple_synth
+    tags: [pad, glass, bright, shimmer, ambient]
+    overrides: {waveform: 0.625, cutoff: 0.85, resonance: 0.2, attack: 0.6, release: 0.85}
+  string_pad:
+    name: Strings Pad
+    kind: preset
+    base: simple_synth
+    tags: [pad, strings, orchestral, lush, ensemble]
+    overrides: {waveform: 0.125, cutoff: 0.65, resonance: 0.0, attack: 0.55, release: 0.7, detune: 0.4}
+  perc_pluck:
+    name: Perc Pluck
+    kind: preset
+    base: simple_synth
+    tags: [pluck, percussive, short, guitar, plucked]
+    overrides: {waveform: 0.875, cutoff: 0.7, resonance: 0.25, attack: 0.0, release: 0.15}
+  harp_pluck:
+    name: Harp Pluck
+    kind: preset
+    base: simple_synth
+    tags: [pluck, harp, soft, plucked, arpeggio]
+    overrides: {waveform: 0.625, cutoff: 0.75, resonance: 0.05, attack: 0.0, release: 0.3}
+  electric_keys:
+    name: Electric Keys
+    kind: preset
+    base: simple_synth
+    tags: [keys, piano, electric, rhodes, chords]
+    overrides: {waveform: 0.625, cutoff: 0.7, resonance: 0.05, attack: 0.02, release: 0.4}
+  fuzzy_keys:
+    name: Fuzzy Analog Keys
+    kind: preset
+    base: simple_synth
+    tags: [keys, analog, fuzzy, warm, chords]
+    overrides: {waveform: 0.125, cutoff: 0.55, resonance: 0.2, attack: 0.03, release: 0.4, detune: 0.2}
+  bell_keys:
+    name: Bell Keys
+    kind: preset
+    base: simple_synth
+    tags: [keys, bell, bright, piano, mallet]
+    overrides: {waveform: 0.875, cutoff: 0.9, resonance: 0.0, attack: 0.0, release: 0.5}
+  rhythmic_synth:
+    name: Brass Stab
+    kind: preset
+    base: simple_synth
+    tags: [synth, rhythmic, brass, horn, stab]
+    overrides: {waveform: 0.125, cutoff: 0.6, resonance: 0.3, attack: 0.1, release: 0.25}
+  wobble_synth:
+    name: Wobble Synth
+    kind: preset
+    base: simple_synth
+    tags: [synth, wobble, electronic, movement]
+    overrides: {waveform: 0.125, cutoff: 0.4, resonance: 0.6, detune: 0.15, release: 0.3}
+  # --- drum kits (drum_kit) -------------------------------------------------------------------
+  kit_808:
+    name: 808 Core Kit
+    kind: preset
+    base: drum_kit
+    tags: [drums, kit, 808, trap, hip-hop, electronic]
+    overrides: {kick_level: 0.9, snare_level: 0.75, hat_level: 0.65, decay: 0.7}
+  kit_acoustic:
+    name: Acoustic Kit
+    kind: preset
+    base: drum_kit
+    tags: [drums, kit, acoustic, live, natural, rock]
+    overrides: {kick_level: 0.8, snare_level: 0.85, hat_level: 0.7, decay: 0.45}
+  kit_thicket:
+    name: Thicket Kit
+    kind: preset
+    base: drum_kit
+    tags: [drums, kit, punchy, tight, electronic]
+    overrides: {kick_level: 0.85, snare_level: 0.8, hat_level: 0.6, decay: 0.3}
+  kit_lofi:
+    name: Lo-Fi Kit
+    kind: preset
+    base: drum_kit
+    tags: [drums, kit, lofi, dusty, chill, hip-hop]
+    overrides: {kick_level: 0.75, snare_level: 0.7, hat_level: 0.55, decay: 0.5}
+  # --- effect presets (catalog effects) -------------------------------------------------------
+  reverb_hall:
+    name: Large Hall
+    kind: preset
+    base: reverb
+    tags: [reverb, hall, large, space, lush]
+    overrides: {size: 0.9, decay: 0.8, mix: 0.4, predelay: 0.15}
+  reverb_plate:
+    name: Vocal Plate
+    kind: preset
+    base: reverb
+    tags: [reverb, plate, vocal, bright, short]
+    overrides: {size: 0.45, decay: 0.45, mix: 0.3, predelay: 0.05}
+  reverb_room:
+    name: Small Room
+    kind: preset
+    base: reverb
+    tags: [reverb, room, small, tight, ambience]
+    overrides: {size: 0.2, decay: 0.2, mix: 0.25, predelay: 0.0}
+  delay_slap:
+    name: Slapback Delay
+    kind: preset
+    base: delay
+    tags: [delay, slapback, short, echo, vintage]
+    overrides: {time: 0.35, feedback: 0.1, mix: 0.25}
+  delay_dub:
+    name: Dub Echo
+    kind: preset
+    base: delay
+    tags: [delay, dub, echo, long, feedback]
+    overrides: {time: 0.7, feedback: 0.6, mix: 0.35}
+  eq_bass_boost:
+    name: Bass Boost
+    kind: preset
+    base: eq
+    tags: [eq, bass, boost, low, warm]
+    overrides: {low_gain: 0.8, mid_gain: 0.5, mid_freq: 0.5, high_gain: 0.5}
+  comp_drum_glue:
+    name: Drum Bus Glue
+    kind: preset
+    base: compressor
+    tags: [compressor, drums, glue, bus, punch]
+    overrides: {threshold: 0.7, ratio: 0.15, attack: 0.5, release: 0.4, makeup: 0.15}
+  limiter_master:
+    name: Master Limiter
+    kind: preset
+    base: limiter
+    tags: [limiter, master, loud, mastering, ceiling]
+    overrides: {ceiling: 0.95, gain: 0.15, release: 0.5}
+  # --- racks (native, read-only) --------------------------------------------------------------
+  instrument_rack:
+    name: Instrument Rack
+    kind: rack
+    role: instrument
+    tags: [rack, instrument, layer, empty]
+    params: []
+  drum_rack_empty:
+    name: Empty Drum Rack
+    kind: rack
+    role: instrument
+    tags: [rack, drum, pads, empty, sampler]
+    params: []
+  audio_effect_rack:
+    name: Audio Effect Rack
+    kind: rack
+    role: audio_fx
+    tags: [rack, effect, chain, macro]
+    params: []
+  mixing_chain:
+    name: Mixing and Mastering Chain
+    kind: rack
+    role: audio_fx
+    tags: [rack, effect, mixing, mastering, chain]
+    params: [{name: Macro 1, display: "0 %"}, {name: Macro 2, display: "50 %"}]
+  # --- third-party plugins (read-only; need the third_party_plugin capability) -----------------
+  serum:
+    name: Serum
+    kind: plugin
+    role: instrument
+    tags: [plugin, synth, wavetable, serum, vst]
+    params: [{name: Cutoff, display: 1.2 kHz}, {name: Wavetable, display: Basic Shapes}]
+  vital:
+    name: Vital
+    kind: plugin
+    role: instrument
+    tags: [plugin, synth, wavetable, vital, free]
+    params: [{name: Cutoff, display: 8.0 kHz}, {name: Oscillator 1, display: Basic}]
+  pigments:
+    name: Pigments
+    kind: plugin
+    role: instrument
+    tags: [plugin, synth, pigments, hybrid]
+    params: [{name: Macro 1, display: 0 %}, {name: Macro 2, display: 0 %}]
+  valhalla_room:
+    name: ValhallaRoom
+    kind: plugin
+    role: audio_fx
+    tags: [plugin, reverb, valhalla, room, hall]
+    params: [{name: Mix, display: 30 %}, {name: Decay, display: 2.0 s}]
+  pro_q:
+    name: FabFilter Pro-Q 3
+    kind: plugin
+    role: audio_fx
+    tags: [plugin, eq, equalizer, fabfilter, surgical]
+    params: [{name: Output Gain, display: 0.0 dB}]

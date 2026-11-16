@@ -34,6 +34,12 @@ MIXER_TOOLS = (
 PROFILES: dict[str, dict[str, frozenset[str]]] = {
     # Ableton Live 12, REAPER 7, Bitwig 5/6, Ardour 9 can all do these through scripting.
     "portable": {"tools": frozenset(CORE_TOOLS), "capabilities": frozenset()},
+    # The portable tools on a DAW that can also load third-party plugins by name: library plugins
+    # (Serum, ...) can be inserted; in every other profile they are unavailable ("blocked").
+    "portable_plugins": {
+        "tools": frozenset(CORE_TOOLS),
+        "capabilities": frozenset({"third_party_plugin"}),
+    },
     # Logic and Cubase over a control surface; FL Studio's MIDI scripting (mixer, transport and
     # plugin parameters only).
     "mixer_only": {"tools": frozenset(MIXER_TOOLS), "capabilities": frozenset()},
@@ -46,7 +52,8 @@ PROFILES: dict[str, dict[str, frozenset[str]]] = {
     },
 }
 # Capability tags beyond tools that a task may require: group_tracks, automation,
-# third_party_plugin, render. No profile offers them yet (an audio backend would add "render").
+# third_party_plugin, render. Only ``portable_plugins`` offers third_party_plugin; an audio
+# backend would add "render".
 DEFAULT_PROFILE = "portable"
 
 

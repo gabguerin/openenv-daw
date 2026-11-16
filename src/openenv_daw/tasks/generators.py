@@ -29,7 +29,8 @@ from openenv_daw.music import (
 )
 from openenv_daw.schema import Session, Track
 from openenv_daw.schema.session import ForeignClip, ForeignDevice, ForeignParam
-from openenv_daw.sim.catalog import load_catalog
+from openenv_daw.sim.catalog import find_item, load_catalog, load_library
+from openenv_daw.sim.profiles import DEFAULT_PROFILE
 from openenv_daw.tasks.model import Check, OracleStep, Task
 from openenv_daw.tasks.resolve import resolve_for_profile
 
@@ -58,6 +59,7 @@ def families() -> dict[str, float]:
         "device_tweak",
         "disambiguation",
         "compositional",
+        "load_sound",
     ]
     return {n: float(load_family(n)["weight"]) for n in names}
 
@@ -637,6 +639,54 @@ def gen_disambiguation(rng: random.Random, pool: dict[str, list[Any]], used: set
     }
 
 
+def gen_load_sound(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+    """Find a named or described sound, rack or plugin with list_devices(query), then load it."""
+    track = rng.choice(pool["track"])
+    vals: dict[str, str] = {"track": track}
+    lib = load_library()
+    tag: str | None = None
+    if "sound" in used:
+        item = lib[rng.choice(pool["sound"])]
+        vals["sound"] = item.name
+        query = item.name
+    elif "style" in used:
+        tag, phrase, iid = rng.choice(pool["style"]).split("|")
+        item = lib[iid]
+        vals["style"] = phrase
+        query = tag
+    elif "rack" in used:
+        item = lib[rng.choice(pool["rack"])]
+        vals["rack"] = item.name
+        query = item.name
+    else:
+        item = find_item(rng.choice(pool["plugin"]))  # type: ignore[assignment]
+        vals["plugin"] = item.name
+        query = item.name
+    if tag is not None:
+        match = {"tags_any": [tag]}
+    elif item.kind == "preset":
+        match = {"preset": item.id}
+    else:
+        match = {"item": item.id}
+    allowed = [track]
+    if item.base:
+        allowed.append(f"device:{item.base}")
+    return {
+        "vals": vals,
+        "checks": [
+            Check(kind="track_exists", args={"track": track, "kind": "midi"}, critical=True),
+            Check(kind="has_device", args={"track": track, **match}, critical=True),
+        ],
+        "oracle": [
+            _step("create_track", name=track, kind="midi"),
+            _step("list_devices", query=query),
+            _step("insert_device", track=track, device=item.id),
+        ],
+        "touchable": [],
+        "allowed_new": allowed,
+    }
+
+
 GENERATORS: dict[str, Callable[[random.Random, dict[str, list[Any]], set[str]], Parts]] = {
     "session_setup": gen_session_setup,
     "melody_in_key": gen_melody_in_key,
@@ -649,6 +699,7 @@ GENERATORS: dict[str, Callable[[random.Random, dict[str, list[Any]], set[str]], 
     "edit_notes": gen_edit_notes,
     "device_tweak": gen_device_tweak,
     "disambiguation": gen_disambiguation,
+    "load_sound": gen_load_sound,
 }
 
 
@@ -689,12 +740,17 @@ def inject_foreign(initial: dict[str, Any] | None, rng: random.Random) -> dict[s
     return s.snapshot()
 
 
-def generate(family: str, seed: int, split: Literal["train", "heldout"] = "train") -> Task:
+def generate(
+    family: str,
+    seed: int,
+    split: Literal["train", "heldout"] = "train",
+    profile: str = DEFAULT_PROFILE,
+) -> Task:
     """Deterministically build a task from (family, split, seed). The result is
     profile-neutral: ``requires`` is what ``resolve_for_profile`` checks. It is stored in its
-    form for the default (portable) profile."""
+    form for ``profile`` (default: portable)."""
     if family == "compositional":
-        return _generate_compositional(seed, split)
+        return _generate_compositional(seed, split, profile)
     data = load_family(family)
     rng = random.Random(f"{family}:{split}:{seed}")
     templates = [t for t in data["templates"] if t["split"] == split]
@@ -733,7 +789,7 @@ def generate(family: str, seed: int, split: Literal["train", "heldout"] = "train
         oracle=oracle,
         tags=tags + [difficulty(len(oracle) - 1)],
     )
-    return resolve_for_profile(task)
+    return resolve_for_profile(task, profile)
 
 
 def difficulty(n_calls: int, parts: int = 1) -> str:
@@ -763,7 +819,9 @@ def _name_conflict(parts_list: list[Parts]) -> bool:
     return False
 
 
-def _generate_compositional(seed: int, split: Literal["train", "heldout"]) -> Task:
+def _generate_compositional(
+    seed: int, split: Literal["train", "heldout"], profile: str = DEFAULT_PROFILE
+) -> Task:
     """Chain 2-3 simple families into one request. A part that is infeasible (``infeasible``)
     makes the whole task blocked: no changes and ``submit("blocked")``."""
     data = load_family("compositional")
@@ -820,4 +878,4 @@ def _generate_compositional(seed: int, split: Literal["train", "heldout"]) -> Ta
         oracle=oracle,
         tags=tags,
     )
-    return resolve_for_profile(task)
+    return resolve_for_profile(task, profile)

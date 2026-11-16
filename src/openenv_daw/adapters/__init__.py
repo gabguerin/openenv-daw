@@ -3,6 +3,7 @@
 from .changes import (
     AddClip,
     AddDevice,
+    AddForeignDevice,
     AddTrack,
     Change,
     NoteSpec,
@@ -28,6 +29,7 @@ __all__ = [
     "SCRATCH_TRACK",
     "AddClip",
     "AddDevice",
+    "AddForeignDevice",
     "AddTrack",
     "ApplyResult",
     "Change",

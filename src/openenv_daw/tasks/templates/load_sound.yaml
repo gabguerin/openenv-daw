@@ -1,0 +1,40 @@
+family: load_sound
+weight: 0.08
+slots:
+  track: {train: [Lead, Bass, Pad, Keys, Arp], heldout: [Topline, Sub, Atmos]}
+  # library ids of presets and kits, named in the request
+  sound:
+    train: [sub_bass, robot_lead, warm_pad, perc_pluck, electric_keys, kit_808, kit_acoustic, hip_hop_bass, bright_lead, glass_pad]
+    heldout: [pixel_bass, soft_lead, string_pad, harp_pluck, fuzzy_keys, kit_thicket, kit_lofi, growl_bass, bell_keys]
+  # described, not named: "<tag the loaded sound must carry>|<phrase>|<id the oracle loads>"
+  style:
+    train:
+      - "bass|a bass sound|sub_bass"
+      - "lead|a bright lead sound|bright_lead"
+      - "pad|a warm pad|warm_pad"
+      - "pluck|a plucked sound|perc_pluck"
+      - "keys|an electric piano style keys sound|electric_keys"
+      - "808|an 808 drum kit|kit_808"
+    heldout:
+      - "bass|a heavy low end bass|growl_bass"
+      - "lead|a mellow lead|soft_lead"
+      - "pad|a lush string pad|string_pad"
+      - "keys|a bell-like keys sound|bell_keys"
+      - "lofi|a dusty lo-fi drum kit|kit_lofi"
+  rack:
+    train: [instrument_rack, audio_effect_rack]
+    heldout: [instrument_rack, mixing_chain]
+  # plugins in the library: loadable only with the third_party_plugin capability
+  plugin:
+    train: [serum, vital]
+    heldout: [pigments, serum]
+templates:
+  - {id: t1, split: train, text: "Load {sound} on a new MIDI track called {track}."}
+  - {id: t2, split: train, text: "Create a MIDI track named {track} and give it the {sound} sound."}
+  - {id: t3, split: train, text: "I need {style} on a new MIDI track called {track}."}
+  - {id: t4, split: train, text: "Add an empty {rack} to a new MIDI track called {track}."}
+  - {id: t5, requires: [third_party_plugin], split: train, text: "Make a MIDI track called {track} and load the {plugin} plugin on it."}
+  - {id: h1, split: heldout, text: "New MIDI track {track}, with {sound} loaded on it."}
+  - {id: h2, split: heldout, text: "Set up {style} for me on a fresh MIDI track named {track}."}
+  - {id: h3, split: heldout, text: "On a new MIDI track {track}, put the {rack} on it."}
+  - {id: h4, requires: [third_party_plugin], split: heldout, text: "Open {plugin} on a new MIDI track called {track}."}

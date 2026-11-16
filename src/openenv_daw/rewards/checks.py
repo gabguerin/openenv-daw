@@ -8,6 +8,7 @@ from typing import Any
 
 from openenv_daw.music import MAJOR, MINOR, NUMERALS, root_pc, scale_classes
 from openenv_daw.schema import Session, Track
+from openenv_daw.sim.catalog import load_library
 
 CheckFn = Callable[[Session, Session, dict[str, Any]], bool]
 CHECKS: dict[str, CheckFn] = {}
@@ -86,8 +87,31 @@ def track_count(s, i, a):
 
 @check
 def has_device(s, i, a):
+    """The track holds a device matching every given argument: ``device`` (catalog id),
+    ``preset`` or ``item`` (library id of a preset, or of a rack/plugin) and ``tags_any`` (the
+    loaded library item carries at least one of these tags)."""
     t = _track(s, a["track"])
-    return t is not None and any(d.device == a["device"] for d in t.devices)
+    if t is None:
+        return False
+    lib = load_library()
+    tags = set(a.get("tags_any", ()))
+    loaded = [(d.device, d.preset, None) for d in t.devices] + [
+        (None, None, d.item) for d in t.foreign_devices
+    ]
+
+    def matches(device: str | None, preset: str | None, item: str | None) -> bool:
+        if "device" in a and device != a["device"]:
+            return False
+        if "preset" in a and preset != a["preset"]:
+            return False
+        if "item" in a and item != a["item"]:
+            return False
+        if tags:
+            lib_id = preset or item
+            return lib_id in lib and bool(tags & set(lib[lib_id].tags))
+        return True
+
+    return any(matches(*c) for c in loaded)
 
 
 @check

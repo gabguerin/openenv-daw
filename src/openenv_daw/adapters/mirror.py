@@ -18,6 +18,7 @@ from openenv_daw.sim.profiles import DEFAULT_PROFILE, capabilities_for, tools_fo
 from .changes import (
     AddClip,
     AddDevice,
+    AddForeignDevice,
     AddTrack,
     Change,
     RemoveClip,
@@ -64,7 +65,7 @@ class MirrorBackend:
         self.profile = profile
         self.capabilities = frozenset(driver.capabilities)
         self.device_map = device_map
-        self.masked = device_map.unsupported_params() if device_map else frozenset()
+        self.masked = device_map.masked() if device_map else frozenset()
         self.tol = tolerances or Tolerances()
         self.allow_destructive_load = allow_destructive_load
         self.ids = IdMap()
@@ -176,6 +177,7 @@ class MirrorBackend:
         gt = {t.id: t for t in got.tracks}
         wt = {t.id: t for t in want.tracks}
         track_ids, mixer, sends, clips_of, devs_of = set(), set(), set(), set(), set()
+        foreign_of: set[str] = set()
         for c in changes:
             match c:
                 case AddTrack() | RemoveTrack():
@@ -190,6 +192,8 @@ class MirrorBackend:
                     clips_of.add(c.track)
                 case AddDevice() | RemoveDevice() | SetParam():
                     devs_of.add(c.track)
+                case AddForeignDevice():
+                    foreign_of.add(c.track)
         if any(isinstance(c, SetTransport) for c in changes):
             if not close(want.tempo_bpm, got.tempo_bpm, tol.bpm) or tuple(
                 want.time_signature
@@ -240,6 +244,14 @@ class MirrorBackend:
             if w is None or g is None:
                 continue
             bad += self._cmp_devices(w, g, applied)
+        for tid in foreign_of:
+            w, g = wt.get(tid), gt.get(tid)
+            if w is None or g is None:
+                continue
+            want_items = {(d.id, d.item) for d in w.foreign_devices if d.item}
+            got_items = {(d.id, d.item) for d in g.foreign_devices if d.item}
+            if want_items - got_items:
+                bad.append(f"foreign devices of {tid}: {sorted(want_items - got_items)} missing")
         return bad
 
     def _cmp_clips(self, w: Track, g: Track, applied: ApplyResult) -> list[str]:
@@ -279,6 +291,8 @@ class MirrorBackend:
         if [(d.id, d.device) for d in w.devices] != [(d.id, d.device) for d in g.devices]:
             return [f"devices of {w.id} differ"]
         for a, b in zip(w.devices, g.devices, strict=True):
+            if a.preset != b.preset:
+                bad.append(f"device {a.id} preset {b.preset} != {a.preset}")
             if a.id in applied.adjusted:
                 continue
             for k, v in a.params.items():

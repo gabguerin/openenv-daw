@@ -55,7 +55,9 @@ def piano_roll(clip: Clip) -> str:
 def _track_html(t: Track, s: Session, total: float, names: dict[str, str]) -> str:
     foreign = t.kind == "group"
     flags = "".join(f" {x}" for x, on in (("M", t.mute), ("S", t.solo)) if on)
-    chips = "".join(f'<span class="dw-chip">{_e(d.device)}</span>' for d in t.devices)
+    chips = "".join(
+        f'<span class="dw-chip">{_e(d.name if d.preset else d.device)}</span>' for d in t.devices
+    )
     chips += "".join(
         f'<span class="dw-chip">{_e(d.name)} (foreign)</span>' for d in t.foreign_devices
     )
@@ -302,7 +304,8 @@ def arrangement_html(
             + "</span>"
         )
         chips = "".join(
-            f'<span class="ds-chip">{_e(d.device)}</span>' for d in t.devices
+            f'<span class="ds-chip">{_e(d.name if d.preset else d.device)}</span>'
+            for d in t.devices
         ) + "".join(f'<span class="ds-chip">{_e(d.name)} 🔒</span>' for d in t.foreign_devices)
         sends = "".join(
             f'<span class="ds-chip">→ {_e(names.get(r, r))} {_db(v)}</span>'

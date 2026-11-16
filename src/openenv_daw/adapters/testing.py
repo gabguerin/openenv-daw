@@ -17,6 +17,7 @@ from openenv_daw.tasks.resolve import resolve_for_profile
 from .changes import (
     AddClip,
     AddDevice,
+    AddForeignDevice,
     AddTrack,
     Change,
     NoteSpec,
@@ -45,7 +46,7 @@ ALL_TOOLS = frozenset(
 
 class FakeDriver:
     name = "fake"
-    capabilities = ALL_TOOLS
+    capabilities = ALL_TOOLS | {"third_party_plugin"}
 
     def __init__(self, lossy: bool = False, native_undo: bool = True, scratch: bool = True) -> None:
         self.lossy = lossy
@@ -158,6 +159,10 @@ class FakeDriver:
                     track=n(ch.track),
                     params={k: self._q(v, 0.001) or 0.0 for k, v in ch.params.items()},
                 )
+            case AddForeignDevice():
+                key = self._key("fdv")
+                ids.bind(ch.id, key)
+                return dataclasses.replace(ch, id=key, track=n(ch.track))
             case RemoveDevice():
                 return RemoveDevice(n(ch.id), n(ch.track))
             case SetParam():
@@ -199,7 +204,7 @@ def assert_driver_conformance(
     """Replay every task's oracle through ``MirrorBackend(make_driver())``: each must score 1.0
     and, for lossless drivers, end in the same state as the simulator. Returns a report with the
     device-map coverage. Tasks the profile or device map cannot serve are replayed as blocked."""
-    mask = device_map.unsupported_params() if device_map else frozenset()
+    mask = device_map.masked() if device_map else frozenset()
     failures: list[str] = []
     for raw in tasks:
         task = resolve_for_profile(raw, profile, mask)
