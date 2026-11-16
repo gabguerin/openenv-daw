@@ -21,6 +21,22 @@ def _factory() -> DawEnvironment:
     )
 
 
+def _ui_kwargs() -> dict:
+    """The Studio tab is only built (and gradio only imported) when the web interface is on."""
+    if os.getenv("ENABLE_WEB_INTERFACE", "false").lower() not in ("true", "1", "yes"):
+        return {}
+    from functools import partial
+
+    from openenv_daw.server.ui.studio import build_daw_studio
+
+    return {
+        "gradio_builder": partial(build_daw_studio, env_factory=_factory),
+        "custom_tab_name": "DAW Studio",
+        "custom_tab_primary": True,
+        "title_override": "openenv-daw: DAW tool-use environment",
+    }
+
+
 app = create_app(
     _factory,
     CallToolAction,
@@ -30,6 +46,7 @@ app = create_app(
     state_cls=DawState,
     reset_cls=DawResetRequest,
     reset_observation_cls=DawResetObservation,
+    **_ui_kwargs(),
 )
 
 
