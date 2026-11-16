@@ -31,8 +31,7 @@ def _ui_kwargs() -> dict:
 
     return {
         "gradio_builder": partial(build_daw_studio, env_factory=_factory),
-        "custom_tab_name": "DAW Studio",
-        "custom_tab_primary": True,
+        "show_default_tab": False,
         "title_override": "openenv-daw: DAW tool-use environment",
     }
 

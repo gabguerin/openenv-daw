@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
+import shutil
 import tempfile
 from collections.abc import Callable
 from typing import Any
@@ -14,7 +16,9 @@ import gradio as gr
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 
 from openenv_daw.env.environment import DawEnvironment
+from openenv_daw.rewards.rubrics import score_episode
 from openenv_daw.runner.rollout import InProcessAdapter, iter_episode
+from openenv_daw.schema import Session as SessionModel
 from openenv_daw.tasks.generators import families
 
 from . import render
@@ -37,11 +41,38 @@ def skeleton(schema: dict[str, Any]) -> str:
     """A JSON args template for a tool: its required parameters with placeholder values."""
     zero = {"string": "", "integer": 0, "number": 0, "boolean": False, "array": [], "object": {}}
     props = schema.get("properties", {})
-    out = {
-        k: zero.get(props.get(k, {}).get("type", "string"), None)
-        for k in schema.get("required", [])
-    }
+    out: dict[str, Any] = {}
+    for k in schema.get("required", []):
+        p = props.get(k, {})
+        if p.get("enum"):
+            out[k] = p["enum"][0]
+        elif "default" in p:
+            out[k] = p["default"]
+        else:
+            out[k] = zero.get(p.get("type", "string"))
     return json.dumps(out, indent=2)
+
+
+def reset_kwargs(
+    split: str, family: str | None, number: Any, randomize: bool = False
+) -> dict[str, Any]:
+    """Arguments for ``env.reset``. The number is a seed on both splits (heldout wraps within
+    the family-filtered pool); a random task draws its own seed so it can be reproduced."""
+    kw: dict[str, Any] = {"split": split}
+    if family and family != "(any)":
+        kw["family"] = family
+    kw["seed"] = random.randrange(2**31) if randomize else max(int(number or 0), 0)
+    return kw
+
+
+def client_key(request: Any) -> str:
+    """Quota key: the client IP (first ``x-forwarded-for`` entry), not the per-page session."""
+    headers = getattr(request, "headers", None) or {}
+    fwd = headers.get("x-forwarded-for") if hasattr(headers, "get") else None
+    if fwd:
+        return fwd.split(",")[0].strip()
+    client = getattr(request, "client", None)
+    return getattr(client, "host", None) or getattr(request, "session_hash", None) or "anon"
 
 
 class Session:
@@ -52,29 +83,80 @@ class Session:
         self.oracle_i = 0
         self.records: list[dict[str, Any]] = []
         self.running = False
+        self.snapshots: list[dict[str, Any]] = []  # [0] = initial, [k] = after step k
+        self.selected: str | None = None
+        self.view_step: int | None = None
+        self.tmpdir: str | None = None
+        self.reset_kw: dict[str, Any] | None = None
 
     def close(self) -> None:
+        if self.tmpdir:
+            shutil.rmtree(self.tmpdir, ignore_errors=True)
         try:
             self.env.close()
         except Exception:
             pass
 
 
-def _views(sess: Session | None) -> tuple[str, str, str, str]:
-    if sess is None or sess.env.episode is None:
-        return "Press **Reset** to start an episode.", "", "", ""
+def sync_snapshots(sess: Session) -> None:
+    """Keep ``snapshots`` aligned with the episode's steps (one snapshot per logged step)."""
     ep = sess.env.episode
+    if ep is None:
+        sess.snapshots = []
+        return
+    if not sess.snapshots:
+        sess.snapshots = [ep.initial.snapshot()]
+    while len(sess.snapshots) < ep.step_count + 1:
+        sess.snapshots.append(ep.backend.session.snapshot())
+
+
+def _views(sess: Session | None) -> tuple[Any, ...]:
+    """task, project, reward, checks, episode, python snippet, environment info, answer key."""
+    if sess is None or sess.env.episode is None:
+        empty = SessionModel()
+        profile = sess.env.profile if sess else ""
+        return (
+            render.task_html(None, profile),
+            render.arrangement_html(empty, empty),
+            render.reward_placeholder_html(),
+            "",
+            render.episode_html([], None, "", False),
+            render.python_html(None, None),
+            render.env_config_html(sess.env) if sess else "",
+            "",
+        )
+    sync_snapshots(sess)
+    ep = sess.env.episode
+    latest = len(sess.snapshots) - 1
+    vs = sess.view_step if sess.view_step is not None and sess.view_step < latest else None
+    k = latest if vs is None else vs
+    cur = SessionModel.restore(sess.snapshots[k])
+    prev = SessionModel.restore(sess.snapshots[k - 1]) if k > 0 else None
     final = ep.score.as_dict() if ep.score else None
+    shown_final = final if vs is None else None
+    damage = (final or {}).get("damage") if vs is None and final else None
+    if damage is None:
+        damage = score_episode(ep.task, ep.initial, cur, None, ep.error_count, False).damage
+    subtitle = f"step {ep.step_count}/{ep.max_steps} · {'done' if ep.done else 'running'}"
+    if vs is not None:
+        subtitle += f" · viewing step {vs}"
+    last = ep.step_log[k - 1] if k > 0 else None
     return (
-        f"**Task** `{ep.task.task_id}` · profile `{sess.env.profile}`\n\n> {ep.task.intent}",
-        render.session_html(ep.backend.session),
-        render.checks_html(ep.task, ep.initial, ep.backend.session, ep.error_count, final),
-        render.step_log_html(ep.step_log),
+        render.task_html(ep.task, sess.env.profile),
+        render.arrangement_html(cur, ep.initial, prev, None, damage),
+        render.reward_compact_html(ep.task, ep.initial, cur, ep.error_count, shown_final),
+        render.dark_checks_html(ep.task, ep.initial, cur, ep.error_count, shown_final, prev),
+        render.episode_html(ep.step_log, k if k > 0 else None, subtitle, True),
+        render.python_html(sess.reset_kw, last),
+        render.env_config_html(sess.env),
+        render.answer_key_html(ep.task),
     )
 
 
-def _call(sess: Session, tool: str, args: dict[str, Any]) -> None:
-    sess.env.step(CallToolAction(tool_name=tool, arguments=args))
+async def _call(sess: Session, tool: str, args: dict[str, Any]) -> None:
+    # step_async: the sync step returns an un-awaited rubric coroutine inside a running loop
+    await sess.env.step_async(CallToolAction(tool_name=tool, arguments=args))
+    sess.view_step = None
 
 
 def build_daw_studio(
@@ -90,7 +172,7 @@ def build_daw_studio(
     probe = env_factory()
     tools = probe.step(ListToolsAction()).tools  # type: ignore[attr-defined]
     schemas = {t.name: t.input_schema for t in tools}
-    profile = probe.profile
+    descriptions = {t.name: (t.description or "") for t in tools}
     probe.close()
     fams = ["(any)", *families()]
     models = ui_models()
@@ -101,22 +183,30 @@ def build_daw_studio(
     def need(sess: Session | None) -> Session:
         return sess or new_session()
 
+    BUSY = "An agent is running on this task."
+
+    def init(sess):
+        sess = need(sess)
+        return (sess, *_views(sess))
+
     def reset(sess, split, family, number, randomize=False):
         sess = need(sess)
-        kw: dict[str, Any] = {"split": split}
-        if family and family != "(any)":
-            kw["family"] = family
-        if not randomize:
-            kw["index" if split == "heldout" else "seed"] = int(number or 0)
+        if sess.running:
+            return (sess, *_views(sess), BUSY, gr.update())
+        kw = reset_kwargs(split, family, number, randomize)
         sess.env.reset(**kw)
+        sess.reset_kw = kw
         sess.oracle_i = 0
-        return (sess, *_views(sess), "")
+        sess.snapshots, sess.selected, sess.view_step = [], None, None
+        return (sess, *_views(sess), "", kw["seed"])
 
     def random_task(sess, split, family, number):
         return reset(sess, split, family, number, True)
 
-    def manual(sess, tool, raw):
+    async def manual(sess, tool, raw):
         sess = need(sess)
+        if sess.running:
+            return (sess, *_views(sess), BUSY)
         if sess.env.episode is None:
             return (sess, *_views(sess), "Reset first.")
         if sess.env.episode.done:
@@ -127,7 +217,7 @@ def build_daw_studio(
                 raise ValueError("arguments must be a JSON object")
         except ValueError as e:
             return (sess, *_views(sess), f"Invalid JSON: {e}")
-        _call(sess, tool, args)
+        await _call(sess, tool, args)
         last = sess.env.episode.step_log[-1]
         return (
             sess,
@@ -136,25 +226,37 @@ def build_daw_studio(
         )
 
     def pick_tool(tool):
-        return skeleton(schemas.get(tool, {}))
+        return skeleton(schemas.get(tool, {})), descriptions.get(tool, "")
 
-    def oracle_step(sess):
+    def select_step(sess, evt: gr.EventData):
+        sess = need(sess)
+        data = getattr(evt, "_data", None) or {}
+        if isinstance(data, dict) and str(data.get("step", "")).isdigit():
+            sess.view_step = int(data["step"])
+        return (sess, *_views(sess))
+
+    async def oracle_step(sess):
         sess = need(sess)
         ep = sess.env.episode
+        if sess.running:
+            return (sess, *_views(sess), BUSY)
         if ep is None or ep.done or sess.oracle_i >= len(ep.task.oracle):
             return (sess, *_views(sess), "Nothing left to replay.")
         st = ep.task.oracle[sess.oracle_i]
         sess.oracle_i += 1
-        _call(sess, st.tool, st.args)
+        await _call(sess, st.tool, st.args)
         return (sess, *_views(sess), f"oracle: `{st.tool}`")
 
     async def oracle_play(sess):
         sess = need(sess)
         ep = sess.env.episode
+        if sess.running:
+            yield (sess, *_views(sess), BUSY)
+            return
         while ep is not None and not ep.done and sess.oracle_i < len(ep.task.oracle):
             st = ep.task.oracle[sess.oracle_i]
             sess.oracle_i += 1
-            _call(sess, st.tool, st.args)
+            await _call(sess, st.tool, st.args)
             yield (sess, *_views(sess), f"oracle: `{st.tool}`")
             await asyncio.sleep(0.4)
         yield (sess, *_views(sess), "Oracle finished.")
@@ -175,13 +277,14 @@ def build_daw_studio(
         if not token:
             yield (sess, *_views(sess), "Sign in with Hugging Face to run an agent.", gr.update())
             return
-        refusal = QUOTA.acquire(getattr(request, "session_hash", "anon") or "anon", oauth)
+        refusal = QUOTA.acquire(client_key(request), oauth)
         if refusal:
             yield (sess, *_views(sess), refusal, gr.update())
             return
         from openenv_daw.runner.client import OpenAIPolicy
 
         sess.running = True
+        sess.view_step = None
         text = f"**{model}**\n\n"
         try:
             policy = OpenAIPolicy(model, HF_ROUTER, token, float(temperature))
@@ -203,11 +306,13 @@ def build_daw_studio(
             sess.running = False
 
     def _dump(sess: Session) -> str:
-        f = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
-        for r in sess.records:
-            f.write(json.dumps(r) + "\n")
-        f.close()
-        return f.name
+        if sess.tmpdir is None:
+            sess.tmpdir = tempfile.mkdtemp(prefix="daw-")
+        path = os.path.join(sess.tmpdir, "daw-trajectories.jsonl")
+        with open(path, "w") as f:
+            for r in sess.records:
+                f.write(json.dumps(r) + "\n")
+        return path
 
     def download(sess):
         if not sess:
@@ -229,58 +334,96 @@ def build_daw_studio(
             )
         return gr.update(value=_dump(sess), visible=True)
 
+    step_js = (
+        "element.addEventListener('click', e => { const r = e.target.closest('[data-step]');"
+        " if (r) trigger('click', {step: r.dataset.step}); });"
+    )
+    header = (
+        '<div class="oe-header"><span class="oe-eyebrow">openenv_daw · MCP environment</span>'
+        "<h1>DAW</h1><p>A tool-use environment for music production: edit a project with "
+        "portable DAW tools and get scored on the result.</p></div>"
+    )
     with gr.Blocks(title=title) as demo:
         state = gr.State(None, time_to_live=3600, delete_callback=lambda s: s and s.close())
-        gr.Markdown(
-            f"## DAW Studio\nYour own environment (profile `{profile}`). Edit a project with the same tools an agent gets."
-        )
-        with gr.Row():
-            with gr.Column(scale=3):
-                intent = gr.Markdown("Press **Reset** to start an episode.")
-                with gr.Row():
-                    split = gr.Radio(["train", "heldout"], value="train", label="Split")
-                    family = gr.Dropdown(fams, value="(any)", label="Family")
-                    number = gr.Number(0, precision=0, label="Seed / heldout index")
-                with gr.Row():
-                    reset_btn = gr.Button("Reset", variant="primary")
-                    random_btn = gr.Button("Random task")
-                arrangement = gr.HTML()
-                with gr.Accordion("Call a tool", open=True):
-                    tool = gr.Dropdown(list(schemas), value=next(iter(schemas)), label="Tool")
-                    args = gr.Code(
-                        skeleton(schemas[next(iter(schemas))]), language="json", label="Arguments"
+        gr.HTML(render.STUDIO_CSS)
+        gr.HTML(header)
+        with gr.Row(equal_height=False):
+            with gr.Column(scale=3, min_width=360):
+                with gr.Column(elem_classes="oe-card"):
+                    with gr.Row(elem_classes="oe-row", equal_height=True):
+                        gr.HTML(
+                            '<div class="oe-step"><h2>1. Start an episode</h2>'
+                            "<p><code>reset()</code> returns the task.</p></div>"
+                        )
+                        reset_btn = gr.Button("Reset", scale=0, min_width=110)
+                        random_btn = gr.Button("Random task", scale=0, min_width=130)
+                    task_card = gr.HTML()
+                    with gr.Accordion("Choose a task", open=False, visible=False):
+                        with gr.Row():
+                            split = gr.Radio(["train", "heldout"], value="train", label="Split")
+                            family = gr.Dropdown(fams, value="(any)", label="Family")
+                            number = gr.Number(
+                                0,
+                                precision=0,
+                                minimum=0,
+                                label="Seed",
+                                info="heldout: wraps within the family's tasks",
+                            )
+                with gr.Column(elem_classes="oe-card"):
+                    gr.HTML(
+                        '<div class="oe-step"><h2>2. Call a tool</h2>'
+                        "<p><code>step()</code> sends a tool call. Pick one:</p></div>"
                     )
-                    run_btn = gr.Button("Run")
+                    arrangement = gr.HTML(render.arrangement_html(SessionModel(), SessionModel()))
+                    first = next(iter(schemas))
+                    tool = gr.Radio(
+                        list(schemas), value=first, show_label=False, elem_classes="oe-tools"
+                    )
+                    tool_doc = gr.Markdown(descriptions.get(first, ""))
+                    args = gr.Code(skeleton(schemas[first]), language="json", label="Arguments")
+                    run_btn = gr.Button("Run", variant="primary")
                     result = gr.Markdown()
-            with gr.Column(scale=2):
-                gr.Markdown("### Checks")
-                checks = gr.HTML()
-                gr.Markdown("### Steps")
-                log = gr.HTML()
-                with gr.Row():
-                    step_btn = gr.Button("Step oracle")
-                    play_btn = gr.Button("Play oracle")
-                with gr.Accordion("Run agent", open=False):
+                with gr.Accordion("More: oracle replay, agent, answer key", open=False):
+                    with gr.Row():
+                        step_btn = gr.Button("Step oracle")
+                        play_btn = gr.Button("Play oracle")
                     gr.LoginButton()
                     model = gr.Dropdown(models, value=models[0], label="Model")
-                    turns = gr.Slider(1, 40, value=20, step=1, label="Max turns")
-                    temp = gr.Slider(0, 1.5, value=0.3, step=0.1, label="Temperature")
+                    with gr.Row():
+                        turns = gr.Slider(1, 40, value=20, step=1, label="Max turns")
+                        temp = gr.Slider(0, 1.5, value=0.3, step=0.1, label="Temperature")
                     agent_btn = gr.Button("Run agent")
                     transcript = gr.Markdown()
                     dl = gr.Button("Prepare trajectory download (JSONL)")
                     dl_file = gr.File(label="Trajectory", visible=False)
-        views = [intent, arrangement, checks, log]
+                    env_cfg = gr.HTML()
+                    with gr.Accordion("Answer key (spoiler)", open=False):
+                        answer = gr.HTML()
+            with gr.Column(scale=2, min_width=320):
+                log = gr.HTML(js_on_load=step_js)
+                reward = gr.HTML()
+                with gr.Accordion("Checks", open=False):
+                    checks = gr.HTML()
+                py = gr.HTML()
+        views = [task_card, arrangement, reward, checks, log, py, env_cfg, answer]
         outs = [state, *views, result]
-        reset_btn.click(reset, [state, split, family, number], outs)
-        random_btn.click(random_task, [state, split, family, number], outs)
-        tool.change(pick_tool, tool, args)
-        run_btn.click(manual, [state, tool, args], outs)
-        step_btn.click(oracle_step, state, outs)
-        play_btn.click(oracle_play, state, outs)
+        agent_limit = int(os.getenv("OPENENV_DAW_UI_AGENT_CONCURRENCY", "4"))
+        free: dict[str, Any] = {"concurrency_limit": None}
+        demo.load(init, state, [state, *views], **free)
+        reset_btn.click(reset, [state, split, family, number], [*outs, number], **free)
+        random_btn.click(random_task, [state, split, family, number], [*outs, number], **free)
+        tool.change(pick_tool, tool, [args, tool_doc], **free)
+        run_btn.click(manual, [state, tool, args], outs, **free)
+        step_btn.click(oracle_step, state, outs, **free)
+        play_btn.click(oracle_play, state, outs, **free)
+        log.click(select_step, state, [state, *views], **free)
         agent_btn.click(
-            run_agent, [state, model, turns, temp], [state, *views, transcript, dl_file]
+            run_agent,
+            [state, model, turns, temp],
+            [state, *views, transcript, dl_file],
+            concurrency_limit=agent_limit,
         )
-        dl.click(download, state, dl_file)
+        dl.click(download, state, dl_file, **free)
     return demo
 
 
