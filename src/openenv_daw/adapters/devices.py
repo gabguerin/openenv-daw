@@ -56,7 +56,7 @@ class DeviceMap:
     library: dict[str, DeviceEntry] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> DeviceMap:
+    def from_dict(cls, raw: dict[str, Any], validate: bool = True) -> DeviceMap:
         out: dict[str, DeviceEntry] = {}
         for did, d in raw.get("devices", {}).items():
             params: dict[str, ParamMap | None] = {}
@@ -72,12 +72,20 @@ class DeviceMap:
             for iid, d in (raw.get("library") or {}).items()
         }
         dm = cls(out, lib)
-        dm.validate()
+        if validate:  # an override is validated once merged (a preset's base may be in the base map)
+            dm.validate()
         return dm
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> DeviceMap:
         return cls.from_dict(yaml.safe_load(Path(path).read_text()))
+
+    def merge(self, override: DeviceMap | dict[str, Any]) -> DeviceMap:
+        """A new map where ``override``'s devices and library items replace this map's."""
+        other = override if isinstance(override, DeviceMap) else DeviceMap.from_dict(override, False)
+        out = DeviceMap({**self.devices, **other.devices}, {**self.library, **other.library})
+        out.validate()
+        return out
 
     def validate(self) -> None:
         cat = load_catalog()

@@ -43,10 +43,11 @@ class SimBackend:
     def __init__(
         self,
         session: Session | None = None,
-        profile: str = DEFAULT_PROFILE,
+        profile: str | None = DEFAULT_PROFILE,
         masked_params: frozenset[str] = frozenset(),
     ) -> None:
         # ``<device>.<param>`` entries this backend cannot set (profile gaps plus episode mask)
+        profile = profile or DEFAULT_PROFILE
         self.masked = unsupported_params_for(profile) | frozenset(masked_params)
         self._session = session or Session()
         self.profile = profile

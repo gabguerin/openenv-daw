@@ -30,8 +30,9 @@ def main(
 ) -> None:
     ap = argparse.ArgumentParser(prog="openenv-daw mcp")
     ap.add_argument("--backend", default="sim", help="entry-point name or module:factory")
-    ap.add_argument("--profile", default=DEFAULT_PROFILE)
+    ap.add_argument("--profile", default=None, help="default: what the backend can serve")
     a = ap.parse_args(argv)
     backend = resolve_backend(a.backend)(a.profile)
+    a.profile = getattr(backend, "profile", None) or a.profile or DEFAULT_PROFILE
     mws = middleware_factory(backend) if middleware_factory else ()
     make_server(backend, a.profile, mws).run()

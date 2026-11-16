@@ -9,7 +9,9 @@ from typing import Any
 from openenv_daw.backends import Backend, SimBackend
 from openenv_daw.rewards.rubrics import EpisodeScore, score_episode
 from openenv_daw.schema import Session
+from openenv_daw.sim.profiles import unsupported_params_for
 from openenv_daw.tasks.model import Task
+from openenv_daw.tasks.resolve import resolve_for_profile
 
 READ_TOOLS = frozenset({"get_session", "list_devices", "get_device_params"})
 
@@ -34,6 +36,13 @@ class Episode:
             backend_factory or (lambda p: SimBackend(profile=p, masked_params=masked_params))
         )(profile)
         self.backend.load(self.initial)
+        self.profile = profile
+        # what the backend itself cannot do (an adapter's unmapped parameters, presets, plugins):
+        # a task that needs it is blocked here, whatever the task file says
+        self.adapter_masked = frozenset(getattr(self.backend, "masked", ())) - masked_params
+        self.adapter_masked -= unsupported_params_for(profile)
+        if self.adapter_masked:
+            self.task = resolve_for_profile(task, profile, masked_params | self.adapter_masked)
         self.step_count = 0
         self.consecutive_errors = 0
         self.error_count = 0
@@ -131,6 +140,8 @@ class Episode:
             "step_log": self.step_log,
             "state_hash": self.backend.session.state_hash(),
             "masked_params": sorted(self.masked_params),
+            "adapter_masked": sorted(self.adapter_masked),
+            "profile": self.profile,
         }
 
     def run(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:

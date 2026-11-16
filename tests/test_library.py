@@ -196,3 +196,73 @@ def test_has_device_matches_presets_items_and_tags():
     assert not has(s, s, {"track": "T", "item": "serum"})
     assert has(s, s, {"track": "U", "item": "serum"})
     assert not has(s, s, {"track": "U", "device": "simple_synth"})
+
+
+# --- profile-neutral heldout, dual scores, adapter masks ------------------------------------------
+
+
+def test_heldout_plugin_tasks_are_stored_loadable_and_resolve_per_profile():
+    from openenv_daw.tasks.resolve import resolve_for_profile
+    from openenv_daw.tasks.store import default_store
+
+    plugin = [t for t in default_store().heldout if "third_party_plugin" in t.requires]
+    assert plugin and all(t.expected_status == "done" for t in plugin)
+    for t in plugin:
+        assert resolve_for_profile(t, "portable").expected_status == "blocked"
+        assert resolve_for_profile(t, "portable_plugins").expected_status == "done"
+
+
+def test_uncatalogued_plugins_stay_blocked_in_every_profile():
+    from openenv_daw.tasks.generators import generate
+    from openenv_daw.tasks.resolve import resolve_for_profile
+
+    for seed in range(20):
+        t = generate("infeasible", seed, "train", None)
+        assert t.expected_status == "blocked"
+        assert resolve_for_profile(t, "portable_plugins").expected_status == "blocked"
+
+
+async def test_dual_eval_scores_the_same_tasks_under_both_profiles(tmp_path):
+    from openenv_daw.runner.report import evaluate_dual, load_task_set
+
+    tasks = load_task_set("heldout")
+    rep = await evaluate_dual("oracle", tasks, tmp_path)
+    assert rep["profile"] == "portable" and rep["success"] == len(tasks)
+    info = rep["informational"]["portable_plugins"]
+    assert info["profile"] == "portable_plugins" and info["success"] == len(tasks)
+    # plugin tasks are loadable only in the second report
+    assert info["by_expected_status"]["done"]["success"] > rep["by_expected_status"]["done"]["success"]
+    assert (tmp_path / "portable_plugins" / "rollouts.jsonl").is_file()
+
+
+def test_device_map_merge_and_profile_for():
+    from openenv_daw.adapters import DeviceMap
+    from openenv_daw.sim.profiles import profile_for
+
+    a = DeviceMap.from_dict({"devices": {"reverb": {"native": "Reverb"}}, "library": {}})
+    b = a.merge({"library": {"reverb_hall": {"native": "Large Hall"}}})
+    assert "reverb_hall" in b.library and not a.library
+    assert profile_for({"third_party_plugin"}) == "portable_plugins" and profile_for(set()) == "portable"
+
+
+def test_an_unmapped_item_blocks_a_named_task_in_the_episode_and_is_recorded():
+    from openenv_daw.adapters import DeviceMap
+    from openenv_daw.env.episode import Episode
+    from openenv_daw.tasks.generators import generate
+
+    task = next(
+        t for t in (generate("load_sound", i, "train") for i in range(40)) if "Sub Bass" in t.intent
+    )
+    assert task.expected_status == "done"
+    dm = DeviceMap.from_dict({"devices": {"simple_synth": {"native": "Synth"}}, "library": {}})
+    ep = Episode(
+        task,
+        "portable",
+        30,
+        3,
+        backend_factory=lambda p: MirrorBackend(FakeDriver(), p, dm, allow_destructive_load=True),
+    )
+    assert ep.task.expected_status == "blocked" and "item:sub_bass" in ep.adapter_masked
+    ep.run("submit", {"status": "blocked", "reason": "no such sound"})
+    meta = ep.result_metadata()
+    assert ep.score.success and meta["profile"] == "portable" and "item:sub_bass" in meta["adapter_masked"]

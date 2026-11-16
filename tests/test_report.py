@@ -10,6 +10,7 @@ from openenv_daw.runner.report import (
     pass_pow_k,
     wilson,
 )
+from openenv_daw.tasks.resolve import resolve_for_profile
 from openenv_daw.tasks.store import default_store
 
 
@@ -30,7 +31,9 @@ async def test_oracle_ceiling_and_floors(tmp_path):
     floor = 0.1  # openenv.yaml validation.reward.floor_margin
     for name in ("noop", "blocked"):
         rep = await evaluate(name, tasks, tmp_path / name)
-        feasible = [t.task_id for t in tasks if t.expected_status == "done"]
+        feasible = [
+            t.task_id for t in tasks if resolve_for_profile(t, "portable").expected_status == "done"
+        ]
         recs = [
             json.loads(x) for x in (tmp_path / name / "rollouts.jsonl").read_text().splitlines()
         ]

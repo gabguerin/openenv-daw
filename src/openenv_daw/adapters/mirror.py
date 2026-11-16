@@ -13,7 +13,7 @@ from openenv_daw.backends.sim import SimBackend
 from openenv_daw.errors import DawError
 from openenv_daw.schema import Session, Track
 from openenv_daw.sim import ops
-from openenv_daw.sim.profiles import DEFAULT_PROFILE, capabilities_for, tools_for
+from openenv_daw.sim.profiles import capabilities_for, profile_for, tools_for
 
 from .changes import (
     AddClip,
@@ -51,11 +51,12 @@ class MirrorBackend:
     def __init__(
         self,
         driver: Driver,
-        profile: str = DEFAULT_PROFILE,
+        profile: str | None = None,
         device_map: DeviceMap | None = None,
         tolerances: Tolerances | None = None,
         allow_destructive_load: bool = False,
     ) -> None:
+        profile = profile or profile_for(driver.capabilities)  # unset: what the driver can serve
         wanted = tools_for(profile) | capabilities_for(profile)
         if missing := wanted - set(driver.capabilities):
             raise ValueError(
@@ -63,7 +64,7 @@ class MirrorBackend:
             )
         self.driver = driver
         self.profile = profile
-        self.capabilities = frozenset(driver.capabilities)
+        self.capabilities = tools_for(profile) | capabilities_for(profile)
         self.device_map = device_map
         self.masked = device_map.masked() if device_map else frozenset()
         self.tol = tolerances or Tolerances()
@@ -291,7 +292,7 @@ class MirrorBackend:
         if [(d.id, d.device) for d in w.devices] != [(d.id, d.device) for d in g.devices]:
             return [f"devices of {w.id} differ"]
         for a, b in zip(w.devices, g.devices, strict=True):
-            if a.preset != b.preset:
+            if a.preset != b.preset and a.id not in applied.acknowledged:
                 bad.append(f"device {a.id} preset {b.preset} != {a.preset}")
             if a.id in applied.adjusted:
                 continue

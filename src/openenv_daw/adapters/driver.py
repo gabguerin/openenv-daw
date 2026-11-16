@@ -24,6 +24,9 @@ class ApplyResult:
     # canonical ids whose DAW value legitimately differs from the request (clamping, rounding
     # beyond tolerance); the mirror adopts the DAW value instead of treating it as drift
     adjusted: set[str] = field(default_factory=set)
+    # canonical ids of loaded library items (presets) that the DAW confirmed it loaded: the mirror
+    # then checks only the base device on read-back, not the preset's reported name
+    acknowledged: set[str] = field(default_factory=set)
 
 
 @runtime_checkable

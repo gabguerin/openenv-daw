@@ -14,6 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from openenv_daw.sim.profiles import DEFAULT_PROFILE
 from openenv_daw.tasks.model import Task
 
 GATE_FRACTION = 0.85  # a student must solve at least 85% of the benchmark
@@ -224,9 +225,12 @@ async def evaluate(
     concurrency: int = 4,
     url: str | None = None,
     make_policy: Callable[[], Any] | None = None,
+    profile: str = DEFAULT_PROFILE,
 ) -> dict[str, Any]:
-    """Run ``policy_name`` on ``tasks`` and write ``rollouts.jsonl``, ``report.json`` and
-    ``report.md`` into ``out_dir``. Returns the report."""
+    """Run ``policy_name`` on ``tasks`` (stored in their profile-neutral form) as served by
+    ``profile`` and write ``rollouts.jsonl``, ``report.json`` and ``report.md`` into ``out_dir``.
+    Returns the report."""
+    from openenv_daw.tasks.resolve import resolve_for_profile
     from openenv_daw.tasks.store import TaskStore
 
     from .rollout import InProcessAdapter, WebSocketAdapter, run_many
@@ -235,16 +239,59 @@ async def evaluate(
     rollouts = out_dir / "rollouts.jsonl"
     rollouts.write_text("")
     if make_policy is None:
+        tasks_for_policy = [resolve_for_profile(t, profile) for t in tasks]
         if policy_name == "openai":
             from .client import OpenAIPolicy
 
             make_policy = lambda: OpenAIPolicy(temperature=0.0)  # noqa: E731
         else:
-            make_policy = lambda: ScriptedPolicy(policy_name, tasks)  # noqa: E731
+            make_policy = lambda: ScriptedPolicy(policy_name, tasks_for_policy)  # noqa: E731
     store = TaskStore(tasks)
-    make_env = (lambda: WebSocketAdapter(url)) if url else (lambda: InProcessAdapter(store))
+    make_env = (
+        (lambda: WebSocketAdapter(url)) if url else (lambda: InProcessAdapter(store, profile))
+    )
     records = await run_many(make_policy, make_env, tasks, samples, concurrency, rollouts)
-    rep = build_report(records, tasks, policy_name)
+    rep = build_report(records, [resolve_for_profile(t, profile) for t in tasks], policy_name)
+    rep["profile"] = profile
     (out_dir / "report.json").write_text(json.dumps(rep, indent=2))
     (out_dir / "report.md").write_text(report_markdown(rep))
     return rep
+
+
+DUAL_PROFILES = ("portable", "portable_plugins")
+
+
+async def evaluate_dual(
+    policy_name: str,
+    tasks: list[Task],
+    out_dir: Path,
+    samples: int = 1,
+    concurrency: int = 4,
+    url: str | None = None,
+    make_policy: Callable[[], Any] | None = None,
+) -> dict[str, Any]:
+    """The same stored tasks scored under ``portable`` (the headline: every DAW can do it) and
+    ``portable_plugins`` (informational: a DAW that also loads third-party plugins). Each profile
+    writes its own report into ``out_dir/<profile>``; the combined ``report.json`` is the headline
+    report plus an ``informational`` entry."""
+    reps = {
+        p: await evaluate(
+            policy_name,
+            tasks,
+            out_dir / p,
+            samples,
+            concurrency,
+            url,
+            make_policy,
+            profile=p,
+        )
+        for p in DUAL_PROFILES
+    }
+    head = {**reps[DUAL_PROFILES[0]], "informational": {p: reps[p] for p in DUAL_PROFILES[1:]}}
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "report.json").write_text(json.dumps(head, indent=2))
+    md = report_markdown(reps[DUAL_PROFILES[0]]) + "".join(
+        f"\n## Informational: {p}\n\n" + report_markdown(reps[p]) for p in DUAL_PROFILES[1:]
+    )
+    (out_dir / "report.md").write_text(md)
+    return head

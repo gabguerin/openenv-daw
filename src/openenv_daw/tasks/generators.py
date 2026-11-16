@@ -32,7 +32,7 @@ from openenv_daw.schema.session import ForeignClip, ForeignDevice, ForeignParam
 from openenv_daw.sim.catalog import find_item, load_catalog, load_library
 from openenv_daw.sim.profiles import DEFAULT_PROFILE
 from openenv_daw.tasks.model import Check, OracleStep, Task
-from openenv_daw.tasks.resolve import resolve_for_profile
+from openenv_daw.tasks.resolve import SUBMIT_BLOCKED_STEP, resolve_for_profile
 
 PLACEHOLDER = re.compile(r"{(\w+)}")
 Parts = dict[str, Any]
@@ -744,11 +744,11 @@ def generate(
     family: str,
     seed: int,
     split: Literal["train", "heldout"] = "train",
-    profile: str = DEFAULT_PROFILE,
+    profile: str | None = DEFAULT_PROFILE,
 ) -> Task:
-    """Deterministically build a task from (family, split, seed). The result is
-    profile-neutral: ``requires`` is what ``resolve_for_profile`` checks. It is stored in its
-    form for ``profile`` (default: portable)."""
+    """Deterministically build a task from (family, split, seed). ``requires`` is what
+    ``resolve_for_profile`` checks. The task is returned in its form for ``profile`` (default:
+    portable); ``profile=None`` gives the profile-neutral form (what the heldout file stores)."""
     if family == "compositional":
         return _generate_compositional(seed, split, profile)
     data = load_family(family)
@@ -771,6 +771,8 @@ def generate(
             key = f"param:{o.args['device']}.{str(o.args['param']).lower()}"
             if key not in requires:
                 requires.append(key)
+    if family == "infeasible":  # blocked in every profile: stored in its final form
+        oracle = [SUBMIT_BLOCKED_STEP]
     initial = parts.get("initial")
     tags: list[str] = []
     if random.Random(f"foreign:{family}:{split}:{seed}").random() < FOREIGN_PROB:
@@ -787,9 +789,10 @@ def generate(
         allowed_new=parts.get("allowed_new", []),
         requires=requires,
         oracle=oracle,
-        tags=tags + [difficulty(len(oracle) - 1)],
+        tags=tags + [difficulty(len(oracle) - 1)] + (['blocked'] if family == 'infeasible' else []),
+        expected_status="blocked" if family == "infeasible" else "done",
     )
-    return resolve_for_profile(task, profile)
+    return task if profile is None else resolve_for_profile(task, profile)
 
 
 def difficulty(n_calls: int, parts: int = 1) -> str:
@@ -820,7 +823,7 @@ def _name_conflict(parts_list: list[Parts]) -> bool:
 
 
 def _generate_compositional(
-    seed: int, split: Literal["train", "heldout"], profile: str = DEFAULT_PROFILE
+    seed: int, split: Literal["train", "heldout"], profile: str | None = DEFAULT_PROFILE
 ) -> Task:
     """Chain 2-3 simple families into one request. A part that is infeasible (``infeasible``)
     makes the whole task blocked: no changes and ``submit("blocked")``."""
@@ -878,4 +881,4 @@ def _generate_compositional(
         oracle=oracle,
         tags=tags,
     )
-    return resolve_for_profile(task, profile)
+    return task if profile is None else resolve_for_profile(task, profile)

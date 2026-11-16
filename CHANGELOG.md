@@ -31,6 +31,16 @@ instructions change. The `openenv_daw.adapters` API is provisional until a secon
   items a DAW cannot load are rerouted to an available item with the same tag, or become blocked.
   `generate(..., profile=)`. `heldout_v5.jsonl` (157 tasks) is the default; v4 stays frozen.
   `infeasible` plugin pools now only hold plugins outside the library. Train sampling changes.
+- `heldout_v5.jsonl` is stored profile-neutral (`generate(..., profile=None)`): plugin tasks are
+  loadable and `resolve_for_profile` blocks them where the profile cannot load plugins. Consumers of
+  raw `store.heldout` must resolve (`store.get`, `resolve_for_profile`). Infeasible plugin requests
+  require the new never-offered tag `uncatalogued_plugin` (they stay blocked under `portable_plugins`).
+- Eval: `evaluate(..., profile=)` and `evaluate_dual` score the same tasks under `portable`
+  (headline) and `portable_plugins` (informational); the runner `eval` does both unless `--profile`.
+- Adapters: `MirrorBackend` and `SimBackend` take `profile=None` (derived from the driver's
+  capabilities, `profile_for`); `ApplyResult.acknowledged` (a loaded preset is checked by its base
+  device only); `DeviceMap.merge`; `Episode` blocks tasks the backend's own `masked` set rules out and
+  records `profile` and `adapter_masked`.
 - TOOLSET 1.1: instructions rendered per profile (`load_instructions(profile)`); parameters a DAW
   cannot set are reported as `supported: false` and the agent is told to check before editing.
 - Backends are injectable (`backend_factory`), `Backend` v1 adds `load` and `close`, errors moved

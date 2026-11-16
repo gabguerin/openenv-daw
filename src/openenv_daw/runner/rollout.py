@@ -208,6 +208,8 @@ async def iter_episode(
             "step_log": meta.get("step_log", []),
             "actions": actions,
             "state_hash": meta.get("state_hash"),
+            "profile": meta.get("profile", getattr(env, "profile", DEFAULT_PROFILE)),
+            "adapter_masked": meta.get("adapter_masked", []),
         },
     }
 
@@ -290,6 +292,9 @@ def main(argv: list[str] | None = None) -> None:
     v.add_argument("--samples", type=int, default=1)
     v.add_argument("--concurrency", type=int, default=4)
     v.add_argument("--url")
+    v.add_argument(
+        "--profile", help="score under one profile (default: portable, plus portable_plugins)"
+    )
     v.add_argument("--out", default="outputs/eval")
     e = sub.add_parser("export", help="filter successful rollouts into SFT JSONL")
     e.add_argument("rollouts")
@@ -300,19 +305,16 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(s))
         return
     if a.cmd == "eval":
-        from .report import evaluate, load_task_set, report_markdown
+        from .report import evaluate, evaluate_dual, load_task_set, report_markdown
 
-        rep = asyncio.run(
-            evaluate(
-                a.policy,
-                load_task_set(a.tasks),
-                Path(a.out),
-                a.samples,
-                a.concurrency,
-                a.url,
-            )
-        )
+        args = (a.policy, load_task_set(a.tasks), Path(a.out), a.samples, a.concurrency, a.url)
+        if a.profile or a.url:  # a server's profile is fixed
+            rep = asyncio.run(evaluate(*args, profile=a.profile or DEFAULT_PROFILE))
+        else:
+            rep = asyncio.run(evaluate_dual(*args))
         print(report_markdown(rep))
+        for p, info in rep.get("informational", {}).items():
+            print(f"\ninformational ({p}): {info['success']}/{info['episodes']} = {info['success_rate']:.1%}")
         return
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)

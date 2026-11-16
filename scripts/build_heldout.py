@@ -1,4 +1,5 @@
-"""Build the fixed heldout split (unseen templates + unseen slot values) as JSONL.
+"""Build the fixed heldout split (unseen templates + unseen slot values) as JSONL, in profile-neutral form:
+plugin tasks are loadable and resolve_for_profile blocks them where the profile cannot load them.
 
 uv run python scripts/build_heldout.py [out.jsonl]   # default: heldout_v5.jsonl
 """
@@ -33,7 +34,7 @@ def main(out: str = "src/openenv_daw/tasks/heldout_v5.jsonl") -> None:
     for fam in families():
         n, seed = 0, 0
         while n < PER_FAMILY[fam] and seed < 3000:
-            t = generate(fam, seed, "heldout")
+            t = generate(fam, seed, "heldout", None)  # profile-neutral
             seed += 1
             if t.intent in seen:
                 continue

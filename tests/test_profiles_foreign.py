@@ -49,7 +49,7 @@ def test_infeasible_declares_capability_tags():
     for seed in range(10):
         t = generate("infeasible", seed, "train")
         assert t.expected_status == "blocked"
-        assert set(t.requires) & {"group_tracks", "automation", "third_party_plugin", "render"}
+        assert set(t.requires) & {"group_tracks", "automation", "uncatalogued_plugin", "render"}
 
 
 def test_trl_reset_samples_by_seed():
@@ -154,7 +154,7 @@ def test_deleting_foreign_track_is_allowed_but_scored_as_damage():
 
 def test_all_oracles_pass_including_foreign():
     tasks = [generate(f, s, "train") for f in families() for s in range(25)]
-    tasks += default_store().heldout
+    tasks += [resolve_for_profile(t, "portable") for t in default_store().heldout]
     assert any("foreign" in t.tags for t in tasks)
     for t in tasks:
         ep = Episode(t, "portable", 40, 3)

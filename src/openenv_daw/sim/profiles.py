@@ -52,7 +52,7 @@ PROFILES: dict[str, dict[str, frozenset[str]]] = {
     },
 }
 # Capability tags beyond tools that a task may require: group_tracks, automation,
-# third_party_plugin, render. Only ``portable_plugins`` offers third_party_plugin; an audio
+# third_party_plugin, render (and ``uncatalogued_plugin``, which no profile offers). Only ``portable_plugins`` offers third_party_plugin; an audio
 # backend would add "render".
 DEFAULT_PROFILE = "portable"
 
@@ -76,6 +76,11 @@ def register_profile(
         "capabilities": frozenset(capabilities),
         "unsupported_params": frozenset(unsupported_params),
     }
+
+
+def profile_for(capabilities: set[str] | frozenset[str]) -> str:
+    """The richest profile of the portable family a backend with ``capabilities`` can serve."""
+    return "portable_plugins" if "third_party_plugin" in capabilities else DEFAULT_PROFILE
 
 
 def unsupported_params_for(profile: str) -> frozenset[str]:
