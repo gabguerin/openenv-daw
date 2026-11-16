@@ -2,7 +2,8 @@
 breakdowns, status confusion matrix, pass@k) and gate on a pass fraction.
 
 Built-in policies give the floors and the ceiling: ``oracle`` (replays the oracle), ``noop``
-(never calls a tool), ``blocked`` (always refuses) and ``random``."""
+(never calls a tool), ``submit_only`` (submits ``done`` without touching anything),
+``blocked`` (always refuses) and ``random``."""
 
 from __future__ import annotations
 
@@ -75,11 +76,15 @@ def submitted_status(rec: dict[str, Any]) -> str:
 
 def _group(rows: list[tuple[dict[str, Any], Task]], key: Callable[[Task], list[str]]) -> dict:
     g: dict[str, list[bool]] = defaultdict(list)
+    m: dict[str, list[float]] = defaultdict(list)
     for r, t in rows:
         for k in key(t):
             g[k].append(bool(r["success"]))
+            if r.get("musicality") is not None:
+                m[k].append(float(r["musicality"]))
     return {
         k: {"success": f"{sum(v)}/{len(v)}", "rate": round(sum(v) / len(v), 4)}
+        | ({"musicality": round(sum(m[k]) / len(m[k]), 4)} if m[k] else {})
         for k, v in sorted(g.items())
     }
 
@@ -117,6 +122,11 @@ def build_report(
         "success_rate": round(ok / n, 4) if n else 0.0,
         "ci95": [round(lo, 4), round(hi, 4)],
         "mean_reward": round(sum(r["reward"] for r, _ in rows) / n, 4) if n else 0.0,
+        "mean_musicality": (
+            round(sum(ms) / len(ms), 4)
+            if (ms := [r["musicality"] for r, _ in rows if r.get("musicality") is not None])
+            else None
+        ),
         **ks,
         "by_family": _group(rows, lambda t: [t.family]),
         "by_tag": _group(rows, lambda t: t.tags or ["untagged"]),
@@ -165,7 +175,7 @@ class ScriptedPolicy:
     """Oracle ceiling and degenerate floors, as chat policies."""
 
     def __init__(self, kind: str, tasks: list[Task], seed: int = 0) -> None:
-        if kind not in ("oracle", "noop", "blocked", "random"):
+        if kind not in ("oracle", "noop", "submit_only", "blocked", "random"):
             raise ValueError(f"unknown policy {kind!r}")
         self.name, self.kind = kind, kind
         self.by_intent = {t.intent: t for t in tasks}
@@ -191,6 +201,10 @@ class ScriptedPolicy:
         done = sum(m["role"] == "tool" for m in messages)
         if self.kind == "noop":
             return {"role": "assistant", "content": "I will not do anything."}
+        if self.kind == "submit_only":
+            if done:
+                return {"role": "assistant", "content": "done"}
+            return self._msg("submit", {"status": "done"}, done)
         if self.kind == "blocked":
             return self._msg("submit", {"status": "blocked", "reason": "not possible"}, done)
         if self.kind == "oracle":

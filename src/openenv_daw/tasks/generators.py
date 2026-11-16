@@ -19,19 +19,17 @@ from openenv_daw.backends import SimBackend
 from openenv_daw.music import (
     CLOSED_HAT,
     KICK,
-    MAJOR,
-    MINOR,
-    NUMERALS,
     note_name,
+    roman_chord,
     root_pc,
     scale_pitches,
-    triad,
+    voice_lead,
 )
 from openenv_daw.schema import Session, Track
 from openenv_daw.schema.session import ForeignClip, ForeignDevice, ForeignParam
 from openenv_daw.sim.catalog import find_item, load_catalog, load_library
 from openenv_daw.sim.profiles import DEFAULT_PROFILE
-from openenv_daw.tasks.model import Check, OracleStep, Task
+from openenv_daw.tasks.model import Check, MusicSpec, OracleStep, Task
 from openenv_daw.tasks.resolve import SUBMIT_BLOCKED_STEP, resolve_for_profile
 
 PLACEHOLDER = re.compile(r"{(\w+)}")
@@ -98,6 +96,8 @@ def gen_session_setup(rng: random.Random, pool: dict[str, list[Any]], used: set[
         oracle.append(_step("set_transport", tempo_bpm=bpm))
     if "ts" in used:
         ts = rng.choice(pool["ts"])
+        if "names" not in used and ts == "4/4" and vals.get("bpm") == "120":
+            ts = rng.choice([x for x in pool["ts"] if x != "4/4"])  # never the default session
         num, den = (int(x) for x in ts.split("/"))
         vals["ts"] = ts
         checks.append(
@@ -122,19 +122,73 @@ def gen_session_setup(rng: random.Random, pool: dict[str, list[Any]], used: set[
     }
 
 
+_RHYTHM_CELLS = [
+    [1.0, 1.0, 1.0, 1.0],
+    [1.5, 0.5, 1.0, 1.0],
+    [1.0, 0.5, 0.5, 1.0, 1.0],
+    [0.5, 0.5, 1.0, 2.0],
+    [1.0, 1.0, 2.0],
+    [0.5, 0.5, 0.5, 0.5, 1.0, 1.0],
+    [2.0, 1.0, 1.0],
+]
+_CLOSING_CELLS = [[1.0, 1.0, 2.0], [1.0, 0.5, 0.5, 2.0], [0.5, 0.5, 1.0, 2.0]]
+
+
+def compose_melody(rng: random.Random, key: str, bars: int) -> list[dict[str, Any]]:
+    """A short, singable line in ``key``: a one-bar motif that returns (transposed by scale
+    steps) across the bars, mostly stepwise, leaps answered by a step back, a held tonic at the
+    end. The best of several seeded candidates by the musicality heuristics is kept."""
+    from openenv_daw.rewards.musicality import melody_score
+
+    sp = scale_pitches(key, 57, 81)
+    tonic = root_pc(key.split()[0])
+    tonics = [i for i, p in enumerate(sp) if p % 12 == tonic and 60 <= p <= 72]
+    best: tuple[float, list[dict[str, Any]]] = (-1.0, [])
+    for _ in range(40):
+        motif_cell = rng.choice(_RHYTHM_CELLS)
+        answer_cell = rng.choice(_RHYTHM_CELLS)
+        closing = rng.choice(_CLOSING_CELLS)
+        steps = [rng.choice([1, 1, -1, -1, 2, -2, 3, -3]) for _ in motif_cell[:-1]]
+        for k, st in enumerate(steps[:-1]):  # a leap is answered by a step the other way
+            if abs(st) >= 3:
+                steps[k + 1] = -1 if st > 0 else 1
+        idx = rng.choice([tonics[0], tonics[0] + 2, tonics[0] + 4])
+        shifts = [0] + [rng.choice([0, 1, -1, 2]) for _ in range(max(0, bars - 2))]
+        notes: list[dict[str, Any]] = []
+        beat = 0.0
+        for bar in range(bars):
+            last = bar == bars - 1
+            cell = closing if last else motif_cell if bar % 2 == 0 else answer_cell
+            idx0 = idx
+            for j, d in enumerate(cell):
+                i = max(0, min(len(sp) - 1, idx))
+                if last and j == len(cell) - 1:
+                    i = min(tonics, key=lambda t: abs(t - idx))
+                p = sp[i]
+                vel = 100 if abs(beat % 4) < 1e-6 else 88
+                notes.append({"pitch": p, "start_beat": beat, "duration_beats": d, "velocity": vel})
+                beat += d
+                step = steps[j % len(steps)] if steps else 1
+                if bar % 2 == 1 and not last:
+                    step = -step  # the answer mirrors the motif
+                idx = i + step
+            if bars > 1 and not last:
+                idx = max(0, min(len(sp) - 1, idx0 + shifts[min(bar + 1, len(shifts) - 1)]))
+        score, _ = melody_score(
+            [(n["start_beat"], n["pitch"], n["duration_beats"], n["velocity"]) for n in notes],
+            key,
+        )
+        if score > best[0]:
+            best = (score, notes)
+        if score >= 0.9:
+            break
+    return best[1]
+
+
 def gen_melody_in_key(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
     key, bars, track = rng.choice(pool["key"]), rng.choice(pool["bars"]), rng.choice(pool["track"])
     length = bars * 4
-    sp = scale_pitches(key, 60, 83)
-    notes = [
-        {
-            "pitch": sp[(i * 2) % len(sp)],
-            "start_beat": float(i),
-            "duration_beats": 1.0,
-            "velocity": 90,
-        }
-        for i in range(length)
-    ]
+    notes = compose_melody(rng, key, bars)
     checks = [
         Check(kind="track_exists", args={"track": track, "kind": "midi"}, critical=True),
         Check(kind="has_device", args={"track": track, "device": "simple_synth"}, critical=True),
@@ -142,11 +196,18 @@ def gen_melody_in_key(rng: random.Random, pool: dict[str, list[Any]], used: set[
         Check(kind="distinct_pitches_at_least", args={"track": track, "n": 3}, critical=True),
         Check(kind="notes_span", args={"track": track, "bar_beats": 4.0}, critical=True),
         Check(
-            kind="clip_at", args={"track": track, "start_beat": 0.0, "length_beats": float(length)}
+            kind="clip_at",
+            args={"track": track, "start_beat": 0.0, "length_beats": float(length)},
+            critical=True,
         ),
+        Check(kind="notes_every_bar", args={"track": track, "bar_beats": 4.0}, critical=True),
         Check(kind="note_count_at_least", args={"track": track, "n": max(2, length // 2)}),
         Check(kind="notes_monophonic", args={"track": track}),
-        Check(kind="notes_pitch_range", args={"track": track, "min": 48, "max": 84}),
+        Check(
+            kind="notes_pitch_range",
+            args={"track": track, "min": 48, "max": 84},
+            critical=True,
+        ),
     ]
     oracle = [
         _step("create_track", name=track, kind="midi"),
@@ -159,6 +220,7 @@ def gen_melody_in_key(rng: random.Random, pool: dict[str, list[Any]], used: set[
         "checks": checks,
         "oracle": oracle,
         "touchable": [],
+        "music": [MusicSpec(kind="melody", track=track, key=key)],
         "allowed_new": [track, "device:simple_synth", f"clip:{track}:1"],
     }
 
@@ -170,7 +232,13 @@ def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[
     kicks = [float(b) for b in range(length)]
     hats = [i * 0.5 for i in range(length * 2)]
     notes = [
-        {"pitch": KICK, "start_beat": b, "duration_beats": 0.25, "velocity": 110} for b in kicks
+        {
+            "pitch": KICK,
+            "start_beat": b,
+            "duration_beats": 0.25,
+            "velocity": 115 if b % 4 == 0 else 100,
+        }
+        for b in kicks
     ]
     checks = [
         Check(kind="track_exists", args={"track": track, "kind": "midi"}, critical=True),
@@ -202,11 +270,20 @@ def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[
     vals = {"bars": str(bars), "track": track, "hat_clause": clause}
     if clause:
         notes += [
-            {"pitch": CLOSED_HAT, "start_beat": b, "duration_beats": 0.25, "velocity": 80}
+            {
+                "pitch": CLOSED_HAT,
+                "start_beat": b,
+                "duration_beats": 0.25,
+                "velocity": 90 if b % 1 == 0 else 68,
+            }
             for b in hats
         ]
         checks.append(
-            Check(kind="hits_on_beats", args={"track": track, "pitch": CLOSED_HAT, "beats": hats})
+            Check(
+                kind="hits_on_beats",
+                args={"track": track, "pitch": CLOSED_HAT, "beats": hats},
+                critical=True,
+            )
         )
         checks.append(
             Check(
@@ -228,6 +305,7 @@ def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[
         "checks": checks,
         "oracle": oracle,
         "touchable": touch,
+        "music": [MusicSpec(kind="drums", track=track)],
         "allowed_new": [track, "device:drum_kit", f"clip:{track}:1"],
     }
 
@@ -432,16 +510,17 @@ def _idea_session(track: str, length: float = 16.0) -> dict[str, Any]:
 
 def gen_chord_progression(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
     key, track = rng.choice(pool["key"]), rng.choice(pool["track"])
-    numerals = rng.choice(pool["prog"]).split("-")
-    root, mode = key.split()
-    steps = MAJOR if mode.lower() == "major" else MINOR
-    r = root_pc(root)
+    mode = key.split()[1].lower()
+    numerals = rng.choice(pool["prog_major" if mode == "major" else "prog_minor"]).split("-")
     length = 4 * len(numerals)
-    notes = [
-        {"pitch": p, "start_beat": 4.0 * k, "duration_beats": 4.0, "velocity": 90}
-        for k, num in enumerate(numerals)
-        for p in triad(r, steps, NUMERALS[num.lower()], 3)
-    ]
+    notes = []
+    prev: list[int] | None = None
+    for k, num in enumerate(numerals):
+        prev = voice_lead(prev, roman_chord(key, num))
+        notes += [
+            {"pitch": p, "start_beat": 4.0 * k, "duration_beats": 4.0, "velocity": 84 + 8 * (k % 2)}
+            for p in prev
+        ]
     checks = [
         Check(kind="track_exists", args={"track": track, "kind": "midi"}, critical=True),
         Check(kind="has_device", args={"track": track, "device": "simple_synth"}, critical=True),
@@ -471,6 +550,7 @@ def gen_chord_progression(rng: random.Random, pool: dict[str, list[Any]], used: 
         "checks": checks,
         "oracle": oracle,
         "touchable": [],
+        "music": [MusicSpec(kind="chords", track=track)],
         "allowed_new": [track, "device:simple_synth", f"clip:{track}:1"],
     }
 
@@ -492,6 +572,9 @@ def gen_edit_notes(rng: random.Random, pool: dict[str, list[Any]], used: set[str
         checks = [
             Check(kind="only_pitches", args={"track": track, "pitches": left}, critical=True),
             Check(kind="note_count_is", args={"track": track, "n": len(left)}, critical=True),
+            Check(
+                kind="existing_notes_kept_except", args={"track": track, "pitch": p}, critical=True
+            ),
             Check(kind="clip_count", args={"track": track, "n": 1}),
         ]
         oracle = [_step("remove_midi_notes", clip="Idea", pitch=p)]
@@ -527,6 +610,7 @@ def gen_edit_notes(rng: random.Random, pool: dict[str, list[Any]], used: set[str
         checks = [
             Check(kind="only_pitches", args={"track": track, "pitches": up}, critical=True),
             Check(kind="note_count_is", args={"track": track, "n": len(up)}, critical=True),
+            Check(kind="notes_transposed", args={"track": track, "offset": 12}, critical=True),
             Check(kind="clip_count", args={"track": track, "n": 1}),
         ]
         oracle = [
@@ -548,8 +632,16 @@ def gen_edit_notes(rng: random.Random, pool: dict[str, list[Any]], used: set[str
 
 def gen_device_tweak(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
     track = rng.choice(pool["track"])
-    device, param, target, text = rng.choice(pool["setting"]).split("|")
-    spec = load_catalog()[device].params[param]
+    cat = load_catalog()
+
+    def _is_default(setting: str) -> bool:
+        dev, prm, tgt_, _ = setting.split("|")
+        ps = cat[dev].params[prm]
+        return abs(ps.to_value(ps.default) - float(tgt_)) <= abs(float(tgt_)) * 0.05
+
+    options = [x for x in pool["setting"] if not _is_default(x)] or pool["setting"]
+    device, param, target, text = rng.choice(options).split("|")
+    spec = cat[device].params[param]
     tgt = float(target)
     initial = build_session(
         [
@@ -789,7 +881,8 @@ def generate(
         allowed_new=parts.get("allowed_new", []),
         requires=requires,
         oracle=oracle,
-        tags=tags + [difficulty(len(oracle) - 1)] + (['blocked'] if family == 'infeasible' else []),
+        music=parts.get("music", []),
+        tags=tags + [difficulty(len(oracle) - 1)] + (["blocked"] if family == "infeasible" else []),
         expected_status="blocked" if family == "infeasible" else "done",
     )
     return task if profile is None else resolve_for_profile(task, profile)
@@ -879,6 +972,7 @@ def _generate_compositional(
         allowed_new=allowed,
         requires=requires,
         oracle=oracle,
+        music=[m for _f, _t, p in picked for m in p.get("music", [])],
         tags=tags,
     )
     return task if profile is None else resolve_for_profile(task, profile)

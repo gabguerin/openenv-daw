@@ -58,7 +58,7 @@ async def test_episode_record_and_export(tmp_path):
     src = tmp_path / "r.jsonl"
     src.write_text("\n".join(json.dumps(r) for r in recs) + "\n")
     stats = export_sft(src, tmp_path / "sft.jsonl")
-    assert stats == {"episodes": 6, "kept": 4, "dropped": 2}
+    assert stats == {"episodes": 6, "kept": 4, "dropped": 2, "nudged": 0, "unmusical": 0}
     rows = [json.loads(line) for line in (tmp_path / "sft.jsonl").read_text().splitlines()]
     assert set(rows[0]) == {"messages", "tools"}
 

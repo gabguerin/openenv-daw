@@ -1,7 +1,7 @@
 """Build the fixed heldout split (unseen templates + unseen slot values) as JSONL, in profile-neutral form:
 plugin tasks are loadable and resolve_for_profile blocks them where the profile cannot load them.
 
-uv run python scripts/build_heldout.py [out.jsonl]   # default: heldout_v5.jsonl
+uv run python scripts/build_heldout.py [out.jsonl]   # default: heldout_v6.jsonl
 """
 
 from __future__ import annotations
@@ -11,24 +11,24 @@ from pathlib import Path
 
 from openenv_daw.tasks.generators import families, generate
 
-PER_FAMILY = {
-    "session_setup": 10,
-    "melody_in_key": 10,
-    "four_on_floor_beat": 10,
-    "reverb_send": 8,
-    "mix_balance": 8,
-    "near_miss": 10,
-    "infeasible": 10,
-    "chord_progression": 14,
-    "edit_notes": 14,
-    "device_tweak": 14,
-    "disambiguation": 12,
-    "compositional": 25,
-    "load_sound": 12,
+PER_FAMILY = {  # at least 15 per family, so per-family rates have a usable interval
+    "session_setup": 15,
+    "melody_in_key": 16,
+    "four_on_floor_beat": 15,
+    "reverb_send": 15,
+    "mix_balance": 15,
+    "near_miss": 15,
+    "infeasible": 15,
+    "chord_progression": 16,
+    "edit_notes": 16,
+    "device_tweak": 16,
+    "disambiguation": 15,
+    "compositional": 28,
+    "load_sound": 15,
 }
 
 
-def main(out: str = "src/openenv_daw/tasks/heldout_v5.jsonl") -> None:
+def main(out: str = "src/openenv_daw/tasks/heldout_v6.jsonl") -> None:
     seen: set[str] = set()
     lines = []
     for fam in families():

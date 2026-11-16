@@ -12,7 +12,7 @@ slots:
       - "eq|mid_gain|-6|-6 dB"
     heldout:
       - "simple_synth|release|1000|1 second"
-      - "compressor|threshold|-18|-18 dB"
+      - "compressor|threshold|-24|-24 dB"
       - "delay|feedback|50|50%"
       - "limiter|ceiling|-3|-3 dB"
       - "eq|mid_freq|1000|1 kHz"

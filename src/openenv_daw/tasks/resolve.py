@@ -92,6 +92,7 @@ def resolve_for_profile(
             "oracle": [SUBMIT_BLOCKED_STEP],
             "touchable": [],
             "allowed_new": [],
+            "music": [],
             "tags": tags,
         }
     )

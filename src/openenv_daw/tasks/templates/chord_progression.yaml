@@ -4,9 +4,12 @@ slots:
   key:
     train: ["C major", "A minor", "G major", "D minor", "F major", "E minor"]
     heldout: ["Bb major", "F# minor", "Eb major", "B minor"]
-  prog:
-    train: ["I-V-vi-IV", "i-VI-III-VII", "I-IV-V-I", "ii-V-I-I"]
-    heldout: ["I-vi-IV-V", "i-iv-v-i", "vi-IV-I-V", "I-iii-IV-V"]
+  prog_major:
+    train: ["I-V-vi-IV", "I-IV-V-I", "ii-V-I-I"]
+    heldout: ["I-vi-IV-V", "vi-IV-I-V", "I-iii-IV-V-I-V", "vi-IV-I"]
+  prog_minor:
+    train: ["i-VI-III-VII", "i-iv-V-i", "i-VII-VI-VII"]
+    heldout: ["i-iv-v-i", "i-VI-iv-V-i-VII", "VI-III-VII"]
   track: {train: [Chords, Keys, Pad], heldout: [Harmony, Organ, Comp]}
 templates:
   - {id: t1, split: train, text: "Create a MIDI track called {track} with a simple_synth and play the chord progression {prog} in {key}: one block triad per bar, {bars} bars, starting at bar 1."}

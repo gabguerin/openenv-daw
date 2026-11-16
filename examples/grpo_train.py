@@ -29,13 +29,15 @@ def main() -> None:
         learning_rate=1e-6,
         beta=0.0,
         logging_steps=1,
+        eval_strategy="steps",
+        eval_steps=50,
         report_to="none",
     )
     trainer = GRPOTrainer(
         model=a.model,
         args=args,
         train_dataset=Dataset.from_list(build_dataset("train", a.n_train)),
-        eval_dataset=Dataset.from_list(build_dataset("heldout", 60)),
+        eval_dataset=Dataset.from_list(build_dataset("heldout", 65, stratified=True)),
         environment_factory=DawToolEnv,
     )
     trainer.train()

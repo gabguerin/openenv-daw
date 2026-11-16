@@ -9,6 +9,7 @@ go straight to the in-process simulator (no MCP client round trip) for training 
 
 from __future__ import annotations
 
+import functools
 import inspect
 import itertools
 import json
@@ -101,9 +102,11 @@ def make_environment_class(
     max_consecutive_errors: int = MAX_CONSECUTIVE_ERRORS,
     backend_factory: Callable[[str], Backend] | None = None,
     param_mask_prob: float = 0.1,
-    reward_mode: str | None = None,
+    reward_mode: str | Callable[[], str | None] | None = None,
 ) -> type:
-    """Build an ``environment_factory`` class exposing every tool of ``profile`` (plus submit)."""
+    """Build an ``environment_factory`` class exposing every tool of ``profile`` (plus submit).
+    ``reward_mode`` may be a callable, read at every reset (a training callback can switch from
+    ``shaped`` to ``strict`` while the run goes)."""
     template = build_server(lambda: SimBackend(profile=profile), profile, on_submit=lambda s, r: {})
     tools = get_server_tools(template)
 
@@ -123,7 +126,13 @@ def make_environment_class(
                 task, profile, param_mask_prob, seed if seed is not None else task.task_id
             )
             self.episode = Episode(
-                task, profile, max_steps, max_consecutive_errors, backend_factory, mask, reward_mode
+                task,
+                profile,
+                max_steps,
+                max_consecutive_errors,
+                backend_factory,
+                mask,
+                reward_mode() if callable(reward_mode) else reward_mode,
             )
 
         def get_reward(self) -> float:
@@ -151,19 +160,49 @@ def make_environment_class(
 DawToolEnv = make_environment_class()
 
 
+@functools.cache
+def tool_schemas(profile: str = DEFAULT_PROFILE) -> tuple[dict[str, Any], ...]:
+    """The tool schemas TRL shows the model for ``DawToolEnv`` (``transformers.get_json_schema``
+    over the generated methods, in TRL's order). The runner and the SFT export use these, so SFT
+    data, rollouts and GRPO all render the same prompt."""
+    from transformers.utils import get_json_schema
+
+    cls = DawToolEnv if profile == DEFAULT_PROFILE else make_environment_class(profile)
+    inst = cls()
+    return tuple(
+        get_json_schema(getattr(inst, name))
+        for name, _ in inspect.getmembers(cls, predicate=inspect.isfunction)
+        if name not in ("reset", "get_reward") and not name.startswith("_")
+    )
+
+
+def _stratified_order(tasks: list[Any]) -> list[int]:
+    """Indices of ``tasks`` interleaved round-robin across families (file order within one)."""
+    by_family: dict[str, list[int]] = {}
+    for i, t in enumerate(tasks):
+        by_family.setdefault(t.family, []).append(i)
+    order: list[int] = []
+    for rank in range(max(map(len, by_family.values()), default=0)):
+        order += [v[rank] for v in by_family.values() if rank < len(v)]
+    return order
+
+
 def build_dataset(
     split: str = "train",
     n: int = 256,
     store: TaskStore | None = None,
     profile: str = DEFAULT_PROFILE,
+    stratified: bool = False,
 ) -> list[dict]:
     """Rows for ``train_dataset``: a conversational ``prompt`` plus the ``task_id`` that ``reset``
-    receives. Works with ``datasets.Dataset.from_list``."""
+    receives. Works with ``datasets.Dataset.from_list``. With ``stratified`` the heldout rows are
+    interleaved across families, so any prefix of ``n`` rows covers every family."""
     store = store or default_store()
     instructions = load_instructions(profile)
+    order = _stratified_order(store.heldout) if stratified and split == "heldout" else None
     rows = []
     for i in range(n):
-        task = store.get_task(split, i, profile)
+        task = store.get_task(split, order[i % len(order)] if order else i, profile)
         rows.append(
             {
                 "prompt": [
@@ -174,3 +213,21 @@ def build_dataset(
             }
         )
     return rows
+
+
+def build_dataset_for(
+    task_ids: list[str], store: TaskStore | None = None, profile: str = DEFAULT_PROFILE
+) -> list[dict]:
+    """Rows for specific task ids (for example the tasks a model solves only some of the time)."""
+    store = store or default_store()
+    instructions = load_instructions(profile)
+    return [
+        {
+            "prompt": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": store.get(i, profile).intent},
+            ],
+            "task_id": i,
+        }
+        for i in task_ids
+    ]

@@ -61,6 +61,24 @@ def to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def prompt_tools(
+    listed: list[dict[str, Any]], profile: str = DEFAULT_PROFILE
+) -> list[dict[str, Any]]:
+    """Tool schemas as TRL renders them for ``DawToolEnv`` (one prompt surface for SFT data,
+    rollouts and GRPO); the MCP schemas when ``transformers`` is not installed."""
+    try:
+        from openenv_daw.trl_env import tool_schemas
+
+        schemas = [dict(s) for s in tool_schemas(profile)]
+    except ImportError:
+        return to_openai_tools(listed)
+    names = {t["name"] for t in listed}
+    schemas = [s for s in schemas if s["function"]["name"] in names]
+    if {s["function"]["name"] for s in schemas} != names:
+        return to_openai_tools(listed)
+    return schemas
+
+
 class InProcessAdapter:
     def __init__(
         self,
@@ -151,7 +169,7 @@ async def iter_episode(
     ``call`` (name, args, out, step) after every tool call and finally ``end`` (the record
     ``run_episode`` returns: chat ``messages``, ``tools`` and the verified outcome)."""
     intent = await env.start(task_id)
-    tools = to_openai_tools(await env.tools())
+    tools = prompt_tools(await env.tools(), getattr(env, "profile", DEFAULT_PROFILE))
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": load_instructions(getattr(env, "profile", DEFAULT_PROFILE))},
         {"role": "user", "content": intent},
@@ -184,7 +202,7 @@ async def iter_episode(
                 {
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": json.dumps(out, sort_keys=True),
+                    "content": json.dumps(out),  # as DawToolEnv serializes results
                 }
             )
         if final.done:
@@ -204,7 +222,9 @@ async def iter_episode(
             "done": final.done,
             "termination": meta.get("termination", "no_submit"),
             "failed_checks": meta.get("failed_checks", []),
+            "nudges": nudges,
             "error_count": score.get("error_count"),
+            "musicality": score.get("musicality"),
             "step_log": meta.get("step_log", []),
             "actions": actions,
             "state_hash": meta.get("state_hash"),
@@ -287,7 +307,9 @@ def main(argv: list[str] | None = None) -> None:
     v = sub.add_parser("eval", help="evaluate a policy and write report.json / report.md")
     v.add_argument("--tasks", default="heldout", help="'heldout' or a JSONL path")
     v.add_argument(
-        "--policy", default="openai", choices=["openai", "oracle", "noop", "blocked", "random"]
+        "--policy",
+        default="openai",
+        choices=["openai", "oracle", "noop", "submit_only", "blocked", "random"],
     )
     v.add_argument("--samples", type=int, default=1)
     v.add_argument("--concurrency", type=int, default=4)
@@ -314,7 +336,9 @@ def main(argv: list[str] | None = None) -> None:
             rep = asyncio.run(evaluate_dual(*args))
         print(report_markdown(rep))
         for p, info in rep.get("informational", {}).items():
-            print(f"\ninformational ({p}): {info['success']}/{info['episodes']} = {info['success_rate']:.1%}")
+            print(
+                f"\ninformational ({p}): {info['success']}/{info['episodes']} = {info['success_rate']:.1%}"
+            )
         return
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)

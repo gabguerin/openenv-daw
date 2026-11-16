@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from openenv_daw.music import MAJOR, MINOR, NUMERALS, root_pc, scale_classes
+from openenv_daw.music import roman_chord, scale_classes
 from openenv_daw.schema import Session, Track
 from openenv_daw.sim.catalog import load_library
 
@@ -287,33 +287,75 @@ def clip_named(s, i, a):
 
 
 def chord_pitch_classes(key: str, numeral: str) -> set[int]:
-    """Diatonic triad (pitch classes) for a roman numeral in ``key``."""
-    root, mode = key.split()
-    steps = MAJOR if mode.lower() == "major" else MINOR
-    deg = NUMERALS[numeral.lower()]
-    r = root_pc(root)
-    return {(r + steps[(deg + k) % 7]) % 12 for k in (0, 2, 4)}
+    """Triad (pitch classes) for a roman numeral in ``key``: the degree comes from the numeral,
+    the quality from its case (upper = major, lower = minor)."""
+    return set(roman_chord(key, numeral))
 
 
 @check
 def chord_progression(s, i, a):
-    """One diatonic triad per bar: the notes starting in bar k have exactly the pitch classes
-    of the k-th numeral of ``numerals`` in ``key``."""
+    """One block triad per bar: the notes starting in bar k have exactly the pitch classes of the
+    k-th numeral of ``numerals`` in ``key`` (case gives the quality), start together (within
+    ``spread`` beats) and are held for at least half a bar."""
     t = _track(s, a["track"])
     if t is None:
         return False
     bar = a.get("bar_beats", 4.0)
-    notes = _abs_notes(t)
+    spread = a.get("spread", 0.25)
+    notes = [(b, n) for b, n in _abs_notes(t)]
     base = a.get("start_beat", min((c.start_beat for c in t.clips), default=0.0))
     for k, num in enumerate(a["numerals"]):
-        pcs = {
-            n.pitch % 12
-            for b, n in notes
-            if base + k * bar - 1e-6 <= b < base + (k + 1) * bar - 1e-6
-        }
-        if pcs != chord_pitch_classes(a["key"], num):
+        lo, hi = base + k * bar - 1e-6, base + (k + 1) * bar - 1e-6
+        win = [(b, n) for b, n in notes if lo <= b < hi]
+        if len(win) < 3 or {n.pitch % 12 for _, n in win} != chord_pitch_classes(a["key"], num):
+            return False
+        if max(b for b, _ in win) - min(b for b, _ in win) > spread + 1e-6:
+            return False
+        if any(n.duration_beats < bar / 2 - 1e-6 for _, n in win):
             return False
     return True
+
+
+@check
+def notes_every_bar(s, i, a):
+    """Every bar of every clip on the track has at least one note starting in it."""
+    t = _track(s, a["track"])
+    if t is None or not t.clips:
+        return False
+    bar = a.get("bar_beats", 4.0)
+    for c in t.clips:
+        for k in range(int(round(c.length_beats / bar))):
+            if not any(k * bar - 1e-6 <= n.start_beat < (k + 1) * bar - 1e-6 for n in c.notes):
+                return False
+    return True
+
+
+def _note_keys(t: Track) -> list[tuple[float, int, float, float]]:
+    return [
+        (c.start_beat, n.pitch, n.start_beat, n.duration_beats) for c in t.clips for n in c.notes
+    ]
+
+
+@check
+def notes_transposed(s, i, a):
+    """The track holds exactly its initial notes shifted by ``offset`` semitones, with the same
+    starts and durations."""
+    t, t0 = _track(s, a["track"]), _track(i, a["track"])
+    if t is None or t0 is None:
+        return False
+    want = sorted((c, p + a["offset"], st, d) for c, p, st, d in _note_keys(t0))
+    return sorted(_note_keys(t)) == want
+
+
+@check
+def existing_notes_kept_except(s, i, a):
+    """Every initial note that is not of ``pitch`` is unchanged, and no note of ``pitch`` is
+    left; nothing else was added."""
+    t, t0 = _track(s, a["track"]), _track(i, a["track"])
+    if t is None or t0 is None:
+        return False
+    want = sorted(k for k in _note_keys(t0) if k[1] != a["pitch"])
+    return sorted(_note_keys(t)) == want
 
 
 @check

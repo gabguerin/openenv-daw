@@ -29,7 +29,7 @@ async def test_oracle_ceiling_and_floors(tmp_path):
     assert oracle["success"] == len(tasks) and oracle["mean_reward"] == 1.0
     assert (tmp_path / "o" / "report.md").read_text().startswith("# Evaluation")
     floor = 0.1  # openenv.yaml validation.reward.floor_margin
-    for name in ("noop", "blocked"):
+    for name in ("noop", "submit_only", "blocked"):
         rep = await evaluate(name, tasks, tmp_path / name)
         feasible = [
             t.task_id for t in tasks if resolve_for_profile(t, "portable").expected_status == "done"

@@ -18,6 +18,15 @@ class OracleStep(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
+class MusicSpec(BaseModel):
+    """What to score for musicality on a track: ``melody`` (needs ``key``), ``chords`` or ``drums``."""
+
+    kind: Literal["melody", "chords", "drums"]
+    track: str
+    key: str | None = None
+    bar_beats: float = 4.0
+
+
 class Task(BaseModel):
     task_id: str
     family: str
@@ -36,4 +45,6 @@ class Task(BaseModel):
     requires: list[str] = Field(default_factory=list)
     expected_status: Literal["done", "blocked"] = "done"
     oracle: list[OracleStep] = Field(default_factory=list)
+    # Soft musicality scoring (never a gate); empty for tasks that are not about music.
+    music: list[MusicSpec] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)

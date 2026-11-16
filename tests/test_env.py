@@ -128,3 +128,23 @@ def test_unseeded_reset_varies_and_reports_seed():
     seed = obs[0].metadata["seed"]
     again = env.reset(seed=seed)
     assert again.task_id == obs[0].task_id
+
+
+def test_stratified_heldout_prefix_covers_every_family():
+    from openenv_daw.tasks.generators import families
+    from openenv_daw.tasks.store import default_store
+    from openenv_daw.trl_env import build_dataset
+
+    rows = build_dataset("heldout", len(families()), stratified=True)
+    got = {r["task_id"].split("-", 1)[0] for r in rows}
+    assert got == set(families())
+    assert len(default_store().heldout) >= 15 * len(families())
+
+
+def test_heldout_has_at_least_15_tasks_per_family():
+    from collections import Counter
+
+    from openenv_daw.tasks.store import load_heldout
+
+    counts = Counter(t.family for t in load_heldout())
+    assert min(counts.values()) >= 15

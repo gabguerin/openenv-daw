@@ -51,7 +51,7 @@ is needed: the simulator is pure Python and deterministic.
   `disambiguation` (duplicate clip names), `load_sound` (named or described presets, racks, plugins), `compositional` (chains of 2-3 families; an infeasible part
   blocks the whole task), feasible `near_miss` requests that mention infeasible-sounding words, and
   about 10% infeasible requests (`submit("blocked")`). Tasks carry difficulty tags `L1`-`L3`.
-  Train tasks are generated from seeds; `heldout_v5.jsonl` (157 tasks, default; `OPENENV_DAW_HELDOUT`
+  Train tasks are generated from seeds; `heldout_v6.jsonl` (212 tasks, ≥15 per family, default; `heldout_v5` is frozen and no longer oracle-valid for chord tasks; `OPENENV_DAW_HELDOUT`
   selects another file; v2, v3 and v4 are frozen) uses unseen templates, slot values and, for
   `compositional`, unseen family combinations.
   Every task carries an oracle solution.

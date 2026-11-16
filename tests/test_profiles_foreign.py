@@ -62,17 +62,17 @@ def test_trl_reset_samples_by_seed():
     assert env.episode.task.task_id == a and a != b
 
 
-def test_heldout_default_is_v4_and_older_frozen(monkeypatch):
+def test_heldout_default_is_v6_and_older_frozen(monkeypatch):
     from openenv_daw.tasks.store import heldout_path, load_heldout
 
     monkeypatch.delenv("OPENENV_DAW_HELDOUT", raising=False)
-    assert heldout_path().name == "heldout_v5.jsonl"
+    assert heldout_path().name == "heldout_v6.jsonl"
     v4 = load_heldout()
     monkeypatch.setenv("OPENENV_DAW_HELDOUT", "heldout_v3.jsonl")
     v3 = load_heldout()
     monkeypatch.setenv("OPENENV_DAW_HELDOUT", "heldout_v2.jsonl")
     v2 = load_heldout()
-    assert len(v2) == 70 and len(v3) == 70 and 140 <= len(v4) <= 160
+    assert len(v2) == 70 and len(v3) == 70 and 200 <= len(v4) <= 230
     assert {t.family for t in v4} == set(families())
 
 

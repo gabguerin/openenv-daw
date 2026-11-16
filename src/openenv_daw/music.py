@@ -51,3 +51,46 @@ NUMERALS = {
     "vi": 5,
     "vii": 6,
 }  # roman numeral -> scale degree
+
+
+def roman_chord(key: str, numeral: str) -> list[int]:
+    """Pitch classes (root, third, fifth) of a roman-numeral triad in ``key``. The degree comes
+    from the numeral, the quality from its case: upper = major, lower = minor. Minor keys use the
+    natural minor scale, so ``V`` is the (major) dominant on the fifth degree."""
+    root, mode = key.split()
+    steps = MAJOR if mode.lower() == "major" else MINOR
+    deg = NUMERALS[numeral.lower()]
+    r = (root_pc(root) + steps[deg]) % 12
+    third = 4 if numeral.isupper() else 3
+    return [r, (r + third) % 12, (r + 7) % 12]
+
+
+def voice_lead(prev: list[int] | None, pcs: list[int], lo: int = 48, hi: int = 72) -> list[int]:
+    """Voicing of the triad ``pcs`` between ``lo`` and ``hi`` that moves least from ``prev``
+    (MIDI pitches); the first chord is the root-position triad at or above ``lo``."""
+    from itertools import product
+
+    options = [[p for p in range(lo, hi + 1) if p % 12 == pc] for pc in pcs]
+    if prev is None:
+        root = min(options[0])
+        out = [root]
+        for pc in pcs[1:]:
+            out.append(min(p for p in range(out[-1] + 1, out[-1] + 13) if p % 12 == pc))
+        return out
+
+    def parallel(c: list[int]) -> bool:
+        """Outer voices move together a perfect fifth or octave apart in both chords."""
+        lo_iv, hi_iv = (prev[-1] - prev[0]) % 12, (c[-1] - c[0]) % 12
+        return lo_iv in (0, 7) and hi_iv == lo_iv and (c[0] - prev[0]) * (c[-1] - prev[-1]) > 0
+
+    cands = [sorted(c) for c in product(*options)]
+    best = min(
+        cands,
+        key=lambda c: (
+            parallel(c),
+            sum(abs(a - b) for a, b in zip(c, sorted(prev), strict=True)),
+            -len(set(c) & set(prev)),
+            sum(c),
+        ),
+    )
+    return best

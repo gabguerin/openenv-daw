@@ -90,7 +90,8 @@ def test_drum_spam_fails():
     assert {"only_pitches", "hits_only_on"} & set(s.critical_failed)
 
 
-def test_junk_objects_are_penalized():
+def test_junk_objects_are_penalized(monkeypatch):
+    monkeypatch.setenv("OPENENV_DAW_MUSIC_WEIGHT", "0")
     t = first("melody_in_key")
     steps = oracle(t)[:-1] + [
         {"tool": "create_track", "args": {"name": "Junk", "kind": "midi"}},
@@ -105,7 +106,8 @@ def test_junk_objects_are_penalized():
     assert len(s.damage) >= 4 and s.damage_penalty == 0.5
 
 
-def test_each_extraneous_object_costs_015():
+def test_each_extraneous_object_costs_015(monkeypatch):
+    monkeypatch.setenv("OPENENV_DAW_MUSIC_WEIGHT", "0")
     t = first("melody_in_key")
     steps = oracle(t)[:-1] + [
         {"tool": "create_track", "args": {"name": "Extra", "kind": "midi"}},
@@ -222,3 +224,106 @@ def test_store_sample_by_tag():
 
     t = default_store().sample("train", 3, tags=["L3"])
     assert "L3" in t.tags
+
+
+# --- holes closed in the training-readiness pass -----------------------------------------------
+
+
+def _notes_step(steps):
+    return next(st for st in steps if st["tool"] == "insert_midi_notes")["args"]
+
+
+def test_submit_done_alone_never_solves_a_task():
+    from openenv_daw.tasks.store import load_heldout
+
+    submit = [{"tool": "submit", "args": {"status": "done"}}]
+    from openenv_daw.tasks.generators import families
+
+    tasks = [generate(f, s, "train") for f in families() for s in range(40)]
+    tasks += load_heldout()
+    for t in tasks:
+        if t.expected_status == "done":
+            assert not run(t, submit).score.success, t.task_id
+
+
+def test_transpose_wipe_with_arbitrary_notes_fails():
+    t = first("edit_notes", lambda t: "Transpose" in t.intent)
+    junk = [
+        {"pitch": 72, "start_beat": 3 + i * 0.25, "duration_beats": 0.25, "velocity": 100}
+        for i in range(8)
+    ]
+    steps = [
+        {"tool": "remove_midi_notes", "args": {"clip": "Idea"}},
+        {"tool": "insert_midi_notes", "args": {"clip": "Idea", "notes": junk}},
+        {"tool": "submit", "args": {"status": "done"}},
+    ]
+    assert not run(t, steps).score.success
+
+
+def test_remove_pitch_wipe_with_arbitrary_notes_fails():
+    t = first("edit_notes", lambda t: "remove every" in t.intent)
+    p = next(o.args["pitch"] for o in t.oracle if o.tool == "remove_midi_notes")
+    left = sorted({q for q in (60, 62, 64, 65, 67, 69, 71, 72) if q != p})
+    junk = [
+        {"pitch": 60, "start_beat": 9 + i, "duration_beats": 0.5, "velocity": 100}
+        for i in range(len(left))
+    ]
+    steps = [
+        {"tool": "remove_midi_notes", "args": {"clip": "Idea"}},
+        {"tool": "insert_midi_notes", "args": {"clip": "Idea", "notes": junk}},
+        {"tool": "submit", "args": {"status": "done"}},
+    ]
+    assert not run(t, steps).score.success
+
+
+def test_staggered_arpeggio_is_not_a_chord_progression():
+    t = first("chord_progression")
+    steps = oracle(t)
+    args = _notes_step(steps)
+    for k, n in enumerate(args["notes"]):
+        n["start_beat"] = n["start_beat"] + (k % 3) * 0.9
+    s = run(t, steps).score
+    assert not s.success and "chord_progression" in s.critical_failed
+
+
+def test_short_chords_fail():
+    t = first("chord_progression")
+    steps = oracle(t)
+    for n in _notes_step(steps)["notes"]:
+        n["duration_beats"] = 0.25
+    assert "chord_progression" in run(t, steps).score.critical_failed
+
+
+def test_three_note_melody_on_long_request_fails():
+    t = first("melody_in_key", lambda t: "4-bar" in t.intent)
+    steps = oracle(t)
+    _notes_step(steps)["notes"] = _notes_step(steps)["notes"][:3]
+    s = run(t, steps).score
+    assert not s.success and s.reward == 0.0
+
+
+def test_out_of_range_melody_is_critical():
+    t = first("melody_in_key")
+    steps = oracle(t)
+    for n in _notes_step(steps)["notes"]:
+        n["pitch"] -= 24
+    s = run(t, steps).score
+    assert "notes_pitch_range" in s.critical_failed and s.reward == 0.0
+
+
+def test_missing_requested_hats_fails():
+    t = hat_task()
+    steps = oracle(t)
+    args = _notes_step(steps)
+    args["notes"] = [n for n in args["notes"] if n["pitch"] == KICK]
+    s = run(t, steps).score
+    assert not s.success and s.reward == 0.0
+
+
+def test_chord_numeral_case_sets_quality():
+    from openenv_daw.music import roman_chord
+
+    assert roman_chord("G major", "vi") == [4, 7, 11]  # Em
+    assert roman_chord("G major", "VI") == [4, 8, 11]  # E major
+    assert roman_chord("A minor", "V") == [4, 8, 11]  # E major
+    assert roman_chord("A minor", "v") == [4, 7, 11]

@@ -80,7 +80,7 @@ class TaskStore:
         return self.sample("train", index, profile=profile)
 
 
-HELDOUT_DEFAULT = "heldout_v5.jsonl"  # v2, v3 and v4 are frozen (v2 as published in 0.1.0)
+HELDOUT_DEFAULT = "heldout_v6.jsonl"  # v2-v5 are frozen (v2 as published in 0.1.0)
 
 
 def heldout_path() -> Path:
