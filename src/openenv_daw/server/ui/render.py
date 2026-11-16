@@ -181,6 +181,7 @@ STUDIO_CSS = """
 .ds-card h4{margin:0 0 8px;font-size:15px;font-weight:600}
 .ds-card ul,.ds-card ol{margin:0;padding:0}.ds-card li{list-style:none;margin:3px 0;font-size:13px}
 .ds-card code{font-family:var(--font-mono);background:none;padding:0}
+.ds-epsec .ds-card{border:none;border-radius:0;padding:0 0 10px;background:none}
 .ds-arr{display:grid;grid-template-columns:minmax(110px,200px) 1fr;border:1px solid var(--border-color-primary);
  border-radius:10px;overflow:hidden;grid-auto-rows:min-content;font-size:13px}
 .ds-ruler{display:grid;grid-column:2;height:24px;border-bottom:1px solid var(--border-color-primary)}

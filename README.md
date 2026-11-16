@@ -6,7 +6,6 @@ colorTo: purple
 sdk: docker
 app_port: 8000
 base_path: /web
-hf_oauth: true
 tags:
   - openenv
 ---
@@ -106,10 +105,8 @@ reward, pass@k / pass^k, breakdowns by family, tag and expected status, the stat
 
 With `ENABLE_WEB_INTERFACE=true` the server mounts a UI at `/web`: a **DAW Studio** tab (one private
 environment per visitor, arrangement view with piano rolls, live checks with the reward of submitting
-`done` or `blocked` now, manual tool calls, oracle replay, an LLM agent, trajectory download) and the
-stock shared Playground. "Run agent" uses the visitor's Hugging Face login (`hf_oauth`); signed-out
-visitors fall back to the Space's `HF_TOKEN` with in-memory limits (3 runs per hour, 20 turns,
-`OPENENV_DAW_UI_DAILY_RUNS` per day). `OPENENV_DAW_UI_MODELS` (comma-separated) sets the model list.
+`done` or `blocked` now, manual tool calls, oracle stepping, trajectory download) and the
+stock shared Playground.
 Deploy with the `space-openenv-daw` workflow (manual or `space-v*` tags) or `openenv push`.
 Install the extras with `uv sync --extra server --extra ui`.
 

@@ -9,7 +9,6 @@ from openenv_daw.rewards.rubrics import score_episode
 from openenv_daw.runner.rollout import InProcessAdapter, iter_episode
 from openenv_daw.schema import Session
 from openenv_daw.server.ui import render
-from openenv_daw.server.ui.quota import Quota
 from openenv_daw.tasks.generators import families, generate
 
 from .test_runner import OraclePolicy
@@ -48,19 +47,6 @@ def test_projections_match_score_episode():
     p = render.project(t, init, init)
     assert p["done"] == score_episode(t, init, init, "done", 0, False).reward
     assert p["blocked"] == score_episode(t, init, init, "blocked", 0, False).reward
-
-
-def test_quota_limits():
-    now = [0.0]
-    q = Quota(runs_per_hour=2, max_turns=5, daily_runs=3, clock=lambda: now[0])
-    assert q.acquire("a", False) is None and q.acquire("a", False) is None
-    assert q.acquire("a", False)  # per-session cap
-    assert q.acquire("b", False) is None
-    assert q.acquire("c", False)  # daily cap
-    assert q.acquire("c", True) is None  # OAuth exempt
-    assert q.turns(False, 40) == 5 and q.turns(True, 40) == 40
-    now[0] = 90000
-    assert q.acquire("a", False) is None
 
 
 def test_studio_builds_with_independent_sessions():
@@ -147,7 +133,7 @@ def test_studio_views_and_snapshots_align():
         sess.env.step(CallToolAction(tool_name=st.tool, arguments=st.args))
     views = _views(sess)
     assert len(sess.snapshots) == sess.env.episode.step_count + 1
-    assert len(views) == 8
+    assert len(views) == 5
     sess.view_step = 0
     assert "viewing step 0" in _views(sess)[4]
 
@@ -173,11 +159,10 @@ def test_reset_kwargs_heldout_family_and_wrap():
     assert "family" not in reset_kwargs("train", "(any)", 1)
 
 
-def test_skeleton_uses_enum_and_quota_key():
+def test_skeleton_uses_enum():
     import json as _json
-    from types import SimpleNamespace
 
-    from openenv_daw.server.ui.studio import client_key, skeleton
+    from openenv_daw.server.ui.studio import skeleton
 
     out = _json.loads(
         skeleton(
@@ -188,8 +173,6 @@ def test_skeleton_uses_enum_and_quota_key():
         )
     )
     assert out["kind"] == "midi"
-    req = SimpleNamespace(headers={"x-forwarded-for": "1.2.3.4, 5.6.7.8"}, client=None)
-    assert client_key(req) == "1.2.3.4"
 
 
 def test_episode_log_marks_current_step_and_checks_delta():
