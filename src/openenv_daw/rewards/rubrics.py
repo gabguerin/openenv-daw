@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -20,6 +21,12 @@ ERROR_PENALTY = 0.02
 ERROR_PENALTY_CAP = 0.2
 DAMAGE_PENALTY = 0.15
 DAMAGE_PENALTY_CAP = 0.5
+SHAPED_SCALE = 0.1  # reward cap of the "shaped" mode
+
+
+def default_reward_mode() -> str:
+    """``strict`` (default) or ``shaped``: ``OPENENV_DAW_REWARD_MODE``."""
+    return os.getenv("OPENENV_DAW_REWARD_MODE", "strict").lower()
 
 
 @dataclass
@@ -38,6 +45,10 @@ class EpisodeScore:
     status: str | None
     truncated: bool
     flags: list[str] = field(default_factory=list)
+    # diagnostics, never part of the reward
+    calls: int = 0
+    oracle_len: int = 0
+    read_first: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -50,6 +61,10 @@ def score_episode(
     status: str | None,
     error_count: int,
     truncated: bool,
+    *,
+    reward_mode: str | None = None,
+    calls: int = 0,
+    read_first: bool | None = None,
 ) -> EpisodeScore:
     results = [run_check(c.kind, final, initial, c.args) for c in task.checks]
     failed = [c.kind for c, ok in zip(task.checks, results, strict=True) if not ok]
@@ -69,6 +84,11 @@ def score_episode(
     status_wrong = status != task.expected_status
     gate = not critical_failed and not status_wrong
     reward = max(0.0, fraction - dmg_pen - err_pen) if gate else 0.0
+    if not gate and not status_wrong and (reward_mode or default_reward_mode()) == "shaped":
+        # shaped: a right answer to feasibility with failed critical checks earns a small
+        # reward proportional to the critical checks passed
+        crit = [ok for c, ok in zip(task.checks, results, strict=True) if c.critical]
+        reward = SHAPED_SCALE * (sum(crit) / len(crit)) if crit else 0.0
     success = gate and all(results) and not violations and status == task.expected_status
     flags = []
     if truncated:
@@ -90,6 +110,9 @@ def score_episode(
         status=status,
         truncated=truncated,
         flags=flags,
+        calls=calls,
+        oracle_len=max(len(task.oracle) - 1, 0),
+        read_first=read_first,
     )
 
 

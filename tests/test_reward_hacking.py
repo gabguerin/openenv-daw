@@ -135,3 +135,90 @@ def test_keyword_refusal_fails_near_miss_tasks():
         s = run(t, [{"tool": "submit", "args": {"status": "blocked"}}]).score
         assert s.reward == 0.0
         assert run(t, oracle(t)).score.success
+
+
+def test_junk_clip_on_new_track_is_penalized():
+    t = first("melody_in_key")
+    steps = oracle(t)[:-1] + [
+        {
+            "tool": "create_midi_clip",
+            "args": {"track": _track_of(t), "start_beat": 64, "length_beats": 4},
+        },
+        oracle(t)[-1],
+    ]
+    s = run(t, steps).score
+    assert s.damage == [f"extra clip on {_track_of(t)}"] and not s.success and s.reward < 1.0
+
+
+def _track_of(t: Task) -> str:
+    return next(o.args["name"] for o in t.oracle if o.tool == "create_track")
+
+
+def test_template_promoted_check_is_critical():
+    t = first("melody_in_key", lambda t: "monophonic" in t.intent or "single-note" in t.intent)
+    assert next(c for c in t.checks if c.kind == "notes_monophonic").critical
+
+
+def test_shaped_reward_is_small_and_opt_in():
+    t = first("melody_in_key")
+    steps = oracle(t)
+    for st in steps:
+        notes = st["args"].get("notes")
+        if notes:
+            p = notes[0]["pitch"]
+            for n in notes:
+                n["pitch"] = p
+    ep = Episode(t, "portable", 30, 3, reward_mode="shaped")
+    for s in steps:
+        ep.run(s["tool"], s["args"])
+    assert 0 < ep.score.reward <= 0.1 and not ep.score.success
+    assert run(t, steps).score.reward == 0.0  # strict stays zero
+    # a wrong status is never rewarded, even when shaped
+    ep2 = Episode(t, "portable", 30, 3, reward_mode="shaped")
+    for s in oracle(t)[:-1] + [{"tool": "submit", "args": {"status": "blocked"}}]:
+        ep2.run(s["tool"], s["args"])
+    assert ep2.score.reward == 0.0
+
+
+def test_diagnostics_are_reported_not_rewarded():
+    t = first("melody_in_key")
+    s = run(t, [{"tool": "get_session", "args": {}}, *oracle(t)]).score
+    assert s.reward == 1.0 and s.read_first is True and s.calls == len(t.oracle)
+
+
+@pytest.mark.parametrize(
+    "family", ["compositional", "edit_notes", "device_tweak", "disambiguation", "chord_progression"]
+)
+def test_new_family_degenerate_policies_fail(family):
+    for seed in range(10):
+        t = generate(family, seed, "train")
+        if t.expected_status == "done":
+            assert not run(t, []).score.success
+            assert run(t, [{"tool": "submit", "args": {"status": "blocked"}}]).score.reward == 0.0
+        assert run(t, oracle(t)).score.success
+
+
+def test_compositional_with_infeasible_part_is_blocked():
+    blocked = [generate("compositional", s, "train") for s in range(30)]
+    blocked = [t for t in blocked if t.expected_status == "blocked"]
+    assert blocked and all(t.oracle[-1].args["status"] == "blocked" for t in blocked)
+    assert any(
+        t.expected_status == "done" for t in (generate("compositional", s) for s in range(30))
+    )
+
+
+def test_device_tweak_tolerance():
+    t = generate("device_tweak", 0, "train")
+    steps = oracle(t)
+    assert run(t, steps).score.success
+    for st in steps:
+        if st["tool"] == "set_device_param":
+            st["args"]["value"] = min(1.0, st["args"]["value"] + 0.2)
+    assert not run(t, steps).score.success
+
+
+def test_store_sample_by_tag():
+    from openenv_daw.tasks.store import default_store
+
+    t = default_store().sample("train", 3, tags=["L3"])
+    assert "L3" in t.tags

@@ -62,15 +62,18 @@ def test_trl_reset_samples_by_seed():
     assert env.episode.task.task_id == a and a != b
 
 
-def test_heldout_default_is_v3_and_v2_frozen(monkeypatch):
+def test_heldout_default_is_v4_and_older_frozen(monkeypatch):
     from openenv_daw.tasks.store import heldout_path, load_heldout
 
     monkeypatch.delenv("OPENENV_DAW_HELDOUT", raising=False)
-    assert heldout_path().name == "heldout_v3.jsonl"
+    assert heldout_path().name == "heldout_v4.jsonl"
+    v4 = load_heldout()
+    monkeypatch.setenv("OPENENV_DAW_HELDOUT", "heldout_v3.jsonl")
     v3 = load_heldout()
     monkeypatch.setenv("OPENENV_DAW_HELDOUT", "heldout_v2.jsonl")
     v2 = load_heldout()
-    assert len(v2) == 70 and len(v3) >= 60 and {t.family for t in v3} >= set(families())
+    assert len(v2) == 70 and len(v3) == 70 and 140 <= len(v4) <= 160
+    assert {t.family for t in v4} == set(families())
 
 
 def test_portable_gap_blocks_every_reverb_send_task():

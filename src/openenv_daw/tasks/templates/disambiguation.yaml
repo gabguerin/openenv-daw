@@ -1,0 +1,10 @@
+family: disambiguation
+weight: 0.06
+slots:
+  names: {train: [Drums, Bass, Lead, Pad, Vocals], heldout: [Keys, Strings, Perc]}
+  pitch: {train: [C4, E4, G4], heldout: [D4, A4]}
+templates:
+  - {id: t1, split: train, text: "Both {a} and {b} contain a clip named Loop. Delete the Loop clip on {b} only."}
+  - {id: t2, split: train, text: "{a} and {b} each have a clip called Loop. Add one {pitch} note at the very start of the Loop clip on {b} (and nothing on {a})."}
+  - {id: h1, split: heldout, text: "There are two clips named Loop, one on {a} and one on {b}. Remove the one on {b} and keep the other."}
+  - {id: h2, split: heldout, text: "Put a single {pitch} note on beat 0 of {b}'s Loop clip; {a} also has a Loop clip, which must stay empty."}

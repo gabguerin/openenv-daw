@@ -1,3 +1,16 @@
+---
+title: openenv-daw
+emoji: 🎹
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 8000
+base_path: /web
+hf_oauth: true
+tags:
+  - openenv
+---
+
 # openenv-daw
 
 An [OpenEnv](https://github.com/openenv/OpenEnv) environment for DAW tool use ("train abstract,
@@ -28,9 +41,14 @@ is needed: the simulator is pure Python and deterministic.
 - **Foreign objects**: about 20% of tasks start with a read-only group track holding a foreign
   plugin and audio/session clips; they are readable, any mutation returns `unsupported`, and
   changing them is scored as damage.
-- **Tasks**: 5 seeded families (`session_setup`, `melody_in_key`, `four_on_floor_beat`,
-  `reverb_send`, `mix_balance`), feasible `near_miss` requests that mention infeasible-sounding words, plus about 10% infeasible requests (`submit("blocked")`).
-  Train tasks are generated from seeds; `heldout_v3.jsonl` (default; `OPENENV_DAW_HELDOUT` selects another file, `heldout_v2.jsonl` is frozen as published in 0.1.0) uses unseen templates and slot values.
+- **Tasks**: seeded families `session_setup`, `melody_in_key`, `four_on_floor_beat`, `reverb_send`,
+  `mix_balance`, `chord_progression`, `edit_notes`, `device_tweak` (display-value tolerance of 5%),
+  `disambiguation` (duplicate clip names), `compositional` (chains of 2-3 families; an infeasible part
+  blocks the whole task), feasible `near_miss` requests that mention infeasible-sounding words, and
+  about 10% infeasible requests (`submit("blocked")`). Tasks carry difficulty tags `L1`-`L3`.
+  Train tasks are generated from seeds; `heldout_v4.jsonl` (145 tasks, default; `OPENENV_DAW_HELDOUT`
+  selects another file; v2 and v3 are frozen) uses unseen templates, slot values and, for
+  `compositional`, unseen family combinations.
   Every task carries an oracle solution.
 
 ## Run
@@ -57,11 +75,44 @@ async with DawEnv(base_url="http://localhost:8000") as env:
 
 | Path | steps/s |
 |---|---|
-| Simulator ops only | ~23,000 |
-| Environment, in-process (FastMCP client overhead) | ~200 |
+| Simulator ops only | ~22,000 |
+| Environment, in-process (FastMCP client overhead) | ~240 |
 | Environment over WebSocket (Docker) | ~270 |
 
 For high-throughput RL use the in-process TRL wrapper, which calls the simulator directly.
+
+`scripts/benchmark.py --url ... --clients 8 --json out.json` also reports step/reset latency
+(p50/p95) and throughput with N concurrent WebSocket sessions.
+
+## Evaluation
+
+```bash
+uv run python -m openenv_daw.runner eval --tasks heldout --policy oracle   # ceiling
+uv run python -m openenv_daw.runner eval --tasks heldout --policy noop     # floors: noop, blocked, random
+uv run python -m openenv_daw.runner eval --tasks heldout --policy openai --samples 4 --out outputs/m
+```
+
+Writes `rollouts.jsonl`, `report.json` and `report.md`: success with a Wilson 95% interval, mean
+reward, pass@k / pass^k, breakdowns by family, tag and expected status, the status confusion matrix
+(expected -> submitted), terminations and calls against oracle length.
+
+## Web UI (Hugging Face Space)
+
+With `ENABLE_WEB_INTERFACE=true` the server mounts a UI at `/web`: a **DAW Studio** tab (one private
+environment per visitor, arrangement view with piano rolls, live checks with the reward of submitting
+`done` or `blocked` now, manual tool calls, oracle replay, an LLM agent, trajectory download) and the
+stock shared Playground. "Run agent" uses the visitor's Hugging Face login (`hf_oauth`); signed-out
+visitors fall back to the Space's `HF_TOKEN` with in-memory limits (3 runs per hour, 20 turns,
+`OPENENV_DAW_UI_DAILY_RUNS` per day). `OPENENV_DAW_UI_MODELS` (comma-separated) sets the model list.
+Deploy with the `space-openenv-daw` workflow (manual or `space-v*` tags) or `openenv push`.
+Install the extras with `uv sync --extra server --extra ui`.
+
+## Reward modes
+
+`OPENENV_DAW_REWARD_MODE=shaped` (also `make_environment_class(reward_mode=...)`) gives a failed
+critical gate with the right submit status 0.1 x the fraction of critical checks passed. The default
+`strict` mode scores it 0. Efficiency (`calls`, `oracle_len`, `read_first`) is reported on the score,
+never rewarded.
 
 ## Milestone 1
 

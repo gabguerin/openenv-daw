@@ -11,6 +11,8 @@ from openenv_daw.rewards.rubrics import EpisodeScore, score_episode
 from openenv_daw.schema import Session
 from openenv_daw.tasks.model import Task
 
+READ_TOOLS = frozenset({"get_session", "list_devices", "get_device_params"})
+
 
 class Episode:
     def __init__(
@@ -21,7 +23,9 @@ class Episode:
         max_consecutive_errors: int,
         backend_factory: Callable[[str], Backend] | None = None,
         masked_params: frozenset[str] = frozenset(),
+        reward_mode: str | None = None,
     ) -> None:
+        self.reward_mode = reward_mode
         self.task = task
         self.masked_params = masked_params
         self.max_steps, self.max_consecutive_errors = max_steps, max_consecutive_errors
@@ -93,8 +97,25 @@ class Episode:
 
     def finalize(self, truncated: bool, why: str) -> str:
         status = self.submitted[0] if self.submitted else None
+        steps = [e["tool"] for e in self.step_log if e["tool"] != "submit"]
+        mutating = next((i for i, t in enumerate(steps) if t not in READ_TOOLS), None)
+        read_first = (
+            None
+            if mutating is None and not steps
+            else any(
+                t in READ_TOOLS for t in steps[: mutating if mutating is not None else len(steps)]
+            )
+        )
         self.score = score_episode(
-            self.task, self.initial, self.backend.session, status, self.error_count, truncated
+            self.task,
+            self.initial,
+            self.backend.session,
+            status,
+            self.error_count,
+            truncated,
+            reward_mode=self.reward_mode,
+            calls=len(steps),
+            read_first=read_first,
         )
         self.done, self.termination = True, why
         return why

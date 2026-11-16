@@ -2,8 +2,8 @@ import json
 
 from openenv_daw.runner.rollout import InProcessAdapter, run_episode, select_tasks
 from openenv_daw.runner.sft_export import export_sft
-from openenv_daw.tasks.generators import generate
 from openenv_daw.tasks.model import Task
+from openenv_daw.tasks.store import default_store
 
 
 class OraclePolicy:
@@ -66,4 +66,13 @@ async def test_episode_record_and_export(tmp_path):
 def test_select_tasks_heldout_and_family():
     h = select_tasks("heldout", 5, family="melody_in_key")
     assert len(h) == 5 and all(t.family == "melody_in_key" and t.split == "heldout" for t in h)
-    assert select_tasks("train", 3)[0].task_id == generate("session_setup", 0).task_id
+    assert select_tasks("train", 3)[0].task_id == default_store().sample("train", 0).task_id
+
+
+async def test_instructions_follow_server_profile():
+    from openenv_daw.tools import load_instructions
+
+    tasks = {t.task_id: t for t in select_tasks("train", 1)}
+    env = InProcessAdapter(profile="mixer_only")
+    rec = await run_episode(OraclePolicy(tasks), env, next(iter(tasks)))
+    assert rec["messages"][0]["content"] == load_instructions("mixer_only")

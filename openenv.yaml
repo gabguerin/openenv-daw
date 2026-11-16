@@ -36,4 +36,4 @@ validation:
       - set_device_param
       - submit
   types:
-    tags: [music, daw, tool-use, mcp]
+    tags: [music, daw, tool-use, mcp, ui, agent]

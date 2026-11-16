@@ -16,7 +16,17 @@ from typing import Any, Literal
 import yaml
 
 from openenv_daw.backends import SimBackend
-from openenv_daw.music import CLOSED_HAT, KICK, scale_pitches
+from openenv_daw.music import (
+    CLOSED_HAT,
+    KICK,
+    MAJOR,
+    MINOR,
+    NUMERALS,
+    note_name,
+    root_pc,
+    scale_pitches,
+    triad,
+)
 from openenv_daw.schema import Session, Track
 from openenv_daw.schema.session import ForeignClip, ForeignDevice, ForeignParam
 from openenv_daw.sim.catalog import load_catalog
@@ -43,6 +53,11 @@ def families() -> dict[str, float]:
         "mix_balance",
         "near_miss",
         "infeasible",
+        "chord_progression",
+        "edit_notes",
+        "device_tweak",
+        "disambiguation",
+        "compositional",
     ]
     return {n: float(load_family(n)["weight"]) for n in names}
 
@@ -101,7 +116,7 @@ def gen_session_setup(rng: random.Random, pool: dict[str, list[Any]], used: set[
         "checks": checks,
         "oracle": oracle,
         "touchable": touch,
-        "allowed_new": list(names) if "names" in used else [],
+        "allowed_new": ([*names, *(f"clip:{n}:0" for n in names)] if "names" in used else []),
     }
 
 
@@ -142,7 +157,7 @@ def gen_melody_in_key(rng: random.Random, pool: dict[str, list[Any]], used: set[
         "checks": checks,
         "oracle": oracle,
         "touchable": [],
-        "allowed_new": [track, "device:simple_synth"],
+        "allowed_new": [track, "device:simple_synth", f"clip:{track}:1"],
     }
 
 
@@ -211,7 +226,7 @@ def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[
         "checks": checks,
         "oracle": oracle,
         "touchable": touch,
-        "allowed_new": [track, "device:drum_kit"],
+        "allowed_new": [track, "device:drum_kit", f"clip:{track}:1"],
     }
 
 
@@ -259,7 +274,7 @@ def gen_reverb_send(rng: random.Random, pool: dict[str, list[Any]], used: set[st
         "oracle": oracle,
         "initial": initial,
         "touchable": [f"track:{source}:sends"],
-        "allowed_new": [ret, "device:reverb"],
+        "allowed_new": [ret, "device:reverb", f"clip:{ret}:0"],
     }
 
 
@@ -384,6 +399,244 @@ def gen_infeasible(rng: random.Random, pool: dict[str, list[Any]], used: set[str
     }
 
 
+# --- newer families -------------------------------------------------------------------------
+
+
+def _pname(p: int) -> str:
+    return note_name(p)
+
+
+_PNAME_TO_PITCH = {note_name(p): p for p in range(24, 100)}
+_IDEA_NOTES = [60, 62, 64, 65, 67, 69, 71, 72]  # one octave of C major, one note per beat
+
+
+def _idea_session(track: str, length: float = 16.0) -> dict[str, Any]:
+    notes = [
+        {"pitch": p, "start_beat": float(i), "duration_beats": 0.5, "velocity": 100}
+        for i, p in enumerate(_IDEA_NOTES)
+    ]
+    return build_session(
+        [
+            ("create_track", {"name": track, "kind": "midi"}),
+            ("insert_device", {"track": track, "device": "simple_synth"}),
+            (
+                "create_midi_clip",
+                {"track": track, "start_beat": 0, "length_beats": length, "name": "Idea"},
+            ),
+            ("insert_midi_notes", {"clip": "Idea", "notes": notes}),
+        ]
+    )
+
+
+def gen_chord_progression(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+    key, track = rng.choice(pool["key"]), rng.choice(pool["track"])
+    numerals = rng.choice(pool["prog"]).split("-")
+    root, mode = key.split()
+    steps = MAJOR if mode.lower() == "major" else MINOR
+    r = root_pc(root)
+    length = 4 * len(numerals)
+    notes = [
+        {"pitch": p, "start_beat": 4.0 * k, "duration_beats": 4.0, "velocity": 90}
+        for k, num in enumerate(numerals)
+        for p in triad(r, steps, NUMERALS[num.lower()], 3)
+    ]
+    checks = [
+        Check(kind="track_exists", args={"track": track, "kind": "midi"}, critical=True),
+        Check(kind="has_device", args={"track": track, "device": "simple_synth"}, critical=True),
+        Check(
+            kind="chord_progression",
+            args={"track": track, "key": key, "numerals": numerals, "start_beat": 0.0},
+            critical=True,
+        ),
+        Check(
+            kind="clip_at", args={"track": track, "start_beat": 0.0, "length_beats": float(length)}
+        ),
+        Check(kind="clip_count", args={"track": track, "n": 1}),
+    ]
+    oracle = [
+        _step("create_track", name=track, kind="midi"),
+        _step("insert_device", track=track, device="simple_synth"),
+        _step("create_midi_clip", track=track, start_beat=0, length_beats=length, name="Chords"),
+        _step("insert_midi_notes", clip="Chords", notes=notes),
+    ]
+    return {
+        "vals": {
+            "key": key,
+            "track": track,
+            "prog": "-".join(numerals),
+            "bars": str(len(numerals)),
+        },
+        "checks": checks,
+        "oracle": oracle,
+        "touchable": [],
+        "allowed_new": [track, "device:simple_synth", f"clip:{track}:1"],
+    }
+
+
+def gen_edit_notes(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+    track = rng.choice(pool["track"])
+    initial = _idea_session(track)
+    touch = [f"track:{track}:clips"]
+    base = [
+        {"pitch": p, "start_beat": float(i), "duration_beats": 0.5, "velocity": 100}
+        for i, p in enumerate(_IDEA_NOTES)
+    ]
+    vals: dict[str, str] = {"track": track}
+    if "pitch" in used:  # delete every note of one pitch
+        name = rng.choice(pool["pitch"])
+        p = _PNAME_TO_PITCH[name]
+        vals["pitch"] = name
+        left = sorted({q for q in _IDEA_NOTES if q != p})
+        checks = [
+            Check(kind="only_pitches", args={"track": track, "pitches": left}, critical=True),
+            Check(kind="note_count_is", args={"track": track, "n": len(left)}, critical=True),
+            Check(kind="clip_count", args={"track": track, "n": 1}),
+        ]
+        oracle = [_step("remove_midi_notes", clip="Idea", pitch=p)]
+    elif "beat" in used:  # add a note, keep the rest
+        name, beat = rng.choice(pool["add"]), rng.choice(pool["beat"])
+        p = _PNAME_TO_PITCH[name]
+        vals.update(add=name, beat=str(beat))
+        checks = [
+            Check(kind="existing_notes_kept", args={"track": track}, critical=True),
+            Check(
+                kind="hits_on_beats",
+                args={"track": track, "pitch": p, "beats": [float(beat)]},
+                critical=True,
+            ),
+            Check(
+                kind="note_count_is",
+                args={"track": track, "n": len(_IDEA_NOTES) + 1},
+                critical=True,
+            ),
+            Check(kind="clip_count", args={"track": track, "n": 1}),
+        ]
+        oracle = [
+            _step(
+                "insert_midi_notes",
+                clip="Idea",
+                notes=[
+                    {"pitch": p, "start_beat": float(beat), "duration_beats": 1.0, "velocity": 100}
+                ],
+            )
+        ]
+    else:  # transpose everything up an octave
+        up = [q + 12 for q in _IDEA_NOTES]
+        checks = [
+            Check(kind="only_pitches", args={"track": track, "pitches": up}, critical=True),
+            Check(kind="note_count_is", args={"track": track, "n": len(up)}, critical=True),
+            Check(kind="clip_count", args={"track": track, "n": 1}),
+        ]
+        oracle = [
+            _step("remove_midi_notes", clip="Idea"),
+            _step(
+                "insert_midi_notes",
+                clip="Idea",
+                notes=[{**n, "pitch": n["pitch"] + 12} for n in base],
+            ),
+        ]
+    return {
+        "vals": vals,
+        "checks": checks,
+        "oracle": oracle,
+        "initial": initial,
+        "touchable": touch,
+    }
+
+
+def gen_device_tweak(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+    track = rng.choice(pool["track"])
+    device, param, target, text = rng.choice(pool["setting"]).split("|")
+    spec = load_catalog()[device].params[param]
+    tgt = float(target)
+    initial = build_session(
+        [
+            ("create_track", {"name": track, "kind": "midi"}),
+            ("insert_device", {"track": track, "device": device}),
+        ]
+    )
+    return {
+        "vals": {"track": track, "device": device, "param": param, "text": text},
+        "checks": [
+            Check(kind="has_device", args={"track": track, "device": device}, critical=True),
+            Check(
+                kind="device_param_display_in",
+                args={
+                    "track": track,
+                    "device": device,
+                    "param": param,
+                    "target": tgt,
+                    "tol_pct": 5.0,
+                },
+                critical=True,
+            ),
+        ],
+        "oracle": [
+            _step(
+                "set_device_param",
+                track=track,
+                device=device,
+                param=param,
+                value=round(spec.to_norm(tgt), 6),
+            )
+        ],
+        "initial": initial,
+        "touchable": [f"track:{track}:devices"],
+    }
+
+
+def gen_disambiguation(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+    a, b = rng.sample(pool["names"], 2)
+    initial = build_session(
+        [("create_track", {"name": n, "kind": "midi"}) for n in (a, b)]
+        + [
+            ("create_midi_clip", {"track": n, "start_beat": 0, "length_beats": 4, "name": "Loop"})
+            for n in (a, b)
+        ]
+    )
+    b_clip = next(c["id"] for t in initial["tracks"] if t["name"] == b for c in t["clips"])
+    vals = {"a": a, "b": b}
+    if "pitch" in used:
+        name = rng.choice(pool["pitch"])
+        vals["pitch"] = name
+        checks = [
+            Check(
+                kind="hits_on_beats",
+                args={"track": b, "pitch": _PNAME_TO_PITCH[name], "beats": [0.0]},
+                critical=True,
+            ),
+            Check(kind="note_count_is", args={"track": b, "n": 1}, critical=True),
+            Check(kind="note_count_is", args={"track": a, "n": 0}, critical=True),
+        ]
+        oracle = [
+            _step(
+                "insert_midi_notes",
+                clip=b_clip,
+                notes=[
+                    {
+                        "pitch": _PNAME_TO_PITCH[name],
+                        "start_beat": 0.0,
+                        "duration_beats": 1.0,
+                        "velocity": 100,
+                    }
+                ],
+            )
+        ]
+    else:
+        checks = [
+            Check(kind="clip_count", args={"track": b, "n": 0}, critical=True),
+            Check(kind="clip_count", args={"track": a, "n": 1}, critical=True),
+        ]
+        oracle = [_step("delete_clip", clip=b_clip)]
+    return {
+        "vals": vals,
+        "checks": checks,
+        "oracle": oracle,
+        "initial": initial,
+        "touchable": [f"track:{b}:clips"],
+    }
+
+
 GENERATORS: dict[str, Callable[[random.Random, dict[str, list[Any]], set[str]], Parts]] = {
     "session_setup": gen_session_setup,
     "melody_in_key": gen_melody_in_key,
@@ -392,6 +645,10 @@ GENERATORS: dict[str, Callable[[random.Random, dict[str, list[Any]], set[str]], 
     "mix_balance": gen_mix_balance,
     "near_miss": gen_near_miss,
     "infeasible": gen_infeasible,
+    "chord_progression": gen_chord_progression,
+    "edit_notes": gen_edit_notes,
+    "device_tweak": gen_device_tweak,
+    "disambiguation": gen_disambiguation,
 }
 
 
@@ -436,6 +693,8 @@ def generate(family: str, seed: int, split: Literal["train", "heldout"] = "train
     """Deterministically build a task from (family, split, seed). The result is
     profile-neutral: ``requires`` is what ``resolve_for_profile`` checks. It is stored in its
     form for the default (portable) profile."""
+    if family == "compositional":
+        return _generate_compositional(seed, split)
     data = load_family(family)
     rng = random.Random(f"{family}:{split}:{seed}")
     templates = [t for t in data["templates"] if t["split"] == split]
@@ -444,6 +703,10 @@ def generate(family: str, seed: int, split: Literal["train", "heldout"] = "train
     pool = {k: v[split] for k, v in data["slots"].items()}
     parts = GENERATORS[family](rng, pool, used)
     intent = tpl["text"].format(**parts["vals"])
+    promoted = set(tpl.get("critical", []))  # wording the template promises, enforced hard
+    for c in parts["checks"]:
+        if c.kind in promoted:
+            c.critical = True
     oracle = parts["oracle"] + [SUBMIT_DONE]
     tools = sorted({o.tool for o in oracle if o.tool != "submit"})
     requires = tools + [c for c in tpl.get("requires", []) if c not in tools]
@@ -466,6 +729,93 @@ def generate(family: str, seed: int, split: Literal["train", "heldout"] = "train
         checks=parts["checks"],
         touchable=parts["touchable"],
         allowed_new=parts.get("allowed_new", []),
+        requires=requires,
+        oracle=oracle,
+        tags=tags + [difficulty(len(oracle) - 1)],
+    )
+    return resolve_for_profile(task)
+
+
+def difficulty(n_calls: int, parts: int = 1) -> str:
+    """L1: up to 3 oracle calls, L2: up to 6, else L3; compositions are always L3."""
+    return "L3" if parts > 1 or n_calls > 6 else "L2" if n_calls > 3 else "L1"
+
+
+_SIMPLE = ("session_setup", "melody_in_key", "four_on_floor_beat")  # need no initial session
+
+
+def _name_conflict(parts_list: list[Parts]) -> bool:
+    """Same track created twice, or two tempo/time-signature settings."""
+    seen: set[str] = set()
+    singles: set[str] = set()
+    for p in parts_list:
+        for o in p["oracle"]:
+            if o.tool == "create_track":
+                n = o.args["name"].lower()
+                if n in seen:
+                    return True
+                seen.add(n)
+            if o.tool == "set_transport":
+                for k in o.args:
+                    if k in singles:
+                        return True
+                    singles.add(k)
+    return False
+
+
+def _generate_compositional(seed: int, split: Literal["train", "heldout"]) -> Task:
+    """Chain 2-3 simple families into one request. A part that is infeasible (``infeasible``)
+    makes the whole task blocked: no changes and ``submit("blocked")``."""
+    data = load_family("compositional")
+    rng = random.Random(f"compositional:{split}:{seed}")
+    combo: list[str] = rng.choice(data["combos"][split])
+    for attempt in range(200):
+        sub = random.Random(f"compositional:{split}:{seed}:{attempt}")
+        picked, parts_list = [], []
+        for fam in combo:
+            fdata = load_family(fam)
+            tpl = sub.choice([t for t in fdata["templates"] if t["split"] == split])
+            used = set(PLACEHOLDER.findall(tpl["text"]))
+            pool = {k: v[split] for k, v in fdata["slots"].items()}
+            parts = GENERATORS[fam](sub, pool, used)
+            picked.append((fam, tpl, parts))
+            parts_list.append(parts)
+        if not _name_conflict(parts_list):
+            break
+    else:
+        raise RuntimeError(f"no conflict-free composition for seed {seed}")
+    intent = " ".join(t["text"].format(**p["vals"]) for _, t, p in picked)
+    checks: list[Check] = []
+    oracle: list[OracleStep] = []
+    touch: list[str] = []
+    allowed: list[str] = []
+    requires: list[str] = []
+    initial = None
+    for _fam, tpl, p in picked:
+        checks += [c for c in p["checks"] if c.kind != "track_count"]  # counts are per family
+        oracle += p["oracle"]
+        touch += p["touchable"]
+        allowed += p.get("allowed_new", [])
+        requires += [r for r in tpl.get("requires", []) if r not in requires]
+        initial = initial or p.get("initial")
+    oracle.append(SUBMIT_DONE)
+    tools = sorted({o.tool for o in oracle if o.tool != "submit"})
+    requires = tools + [r for r in requires if r not in tools]
+    tags = ["compositional", f"parts{len(combo)}", "L3"]
+    if random.Random(f"foreign:compositional:{split}:{seed}").random() < FOREIGN_PROB:
+        initial = inject_foreign(
+            initial, random.Random(f"foreign-pick:compositional:{split}:{seed}")
+        )
+        tags.append("foreign")
+    task = Task(
+        task_id=f"compositional-{split}-{seed}",
+        family="compositional",
+        intent=intent,
+        split=split,
+        initial_state=initial,
+        checks=checks,
+        touchable=touch,
+        allowed_new=allowed,
         requires=requires,
         oracle=oracle,
         tags=tags,

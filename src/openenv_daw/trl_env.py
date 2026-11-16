@@ -101,6 +101,7 @@ def make_environment_class(
     max_consecutive_errors: int = MAX_CONSECUTIVE_ERRORS,
     backend_factory: Callable[[str], Backend] | None = None,
     param_mask_prob: float = 0.1,
+    reward_mode: str | None = None,
 ) -> type:
     """Build an ``environment_factory`` class exposing every tool of ``profile`` (plus submit)."""
     template = build_server(lambda: SimBackend(profile=profile), profile, on_submit=lambda s, r: {})
@@ -122,7 +123,7 @@ def make_environment_class(
                 task, profile, param_mask_prob, seed if seed is not None else task.task_id
             )
             self.episode = Episode(
-                task, profile, max_steps, max_consecutive_errors, backend_factory, mask
+                task, profile, max_steps, max_consecutive_errors, backend_factory, mask, reward_mode
             )
 
         def get_reward(self) -> float:

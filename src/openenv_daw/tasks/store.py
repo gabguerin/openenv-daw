@@ -49,16 +49,30 @@ class TaskStore:
         seed: int = 0,
         family: str | None = None,
         profile: str = DEFAULT_PROFILE,
+        tags: list[str] | None = None,
     ) -> Task:
+        """A task of ``split``; ``tags`` (for example ``["L2"]``) keeps heldout tasks that carry
+        all of them and, for train, regenerates (up to 200 seeds ahead) until one matches."""
         if split == "heldout":
-            pool = [t for t in self.heldout if family in (None, t.family)]
+            pool = [
+                t
+                for t in self.heldout
+                if family in (None, t.family) and set(tags or ()) <= set(t.tags)
+            ]
             if not pool:
                 raise KeyError("no heldout tasks")
             return resolve_for_profile(pool[seed % len(pool)], profile)
         rng = random.Random(f"family:{seed}")
         fams = families()
         fam = family or rng.choices(list(fams), weights=list(fams.values()))[0]
-        return resolve_for_profile(generate(fam, seed, "train"), profile)
+        task = generate(fam, seed, "train")
+        for i in range(1, 200):
+            if set(tags or ()) <= set(task.tags):
+                break
+            rng = random.Random(f"family:{seed}:{i}")
+            fam = family or rng.choices(list(fams), weights=list(fams.values()))[0]
+            task = generate(fam, seed + i * 7919, "train")
+        return resolve_for_profile(task, profile)
 
     def get_task(self, split: str, index: int, profile: str = DEFAULT_PROFILE) -> Task:
         if split == "heldout":
@@ -66,7 +80,7 @@ class TaskStore:
         return self.sample("train", index, profile=profile)
 
 
-HELDOUT_DEFAULT = "heldout_v3.jsonl"  # heldout_v2.jsonl is frozen as published in 0.1.0
+HELDOUT_DEFAULT = "heldout_v4.jsonl"  # v2 and v3 are frozen (v2 as published in 0.1.0)
 
 
 def heldout_path() -> Path:

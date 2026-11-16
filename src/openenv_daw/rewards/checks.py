@@ -102,6 +102,24 @@ def device_param_in(s, i, a):
 
 
 @check
+def device_param_display_in(s, i, a):
+    """The parameter's display value (Hz, ms, dB, ...) is within ``tol_pct`` percent of
+    ``target``."""
+    from openenv_daw.sim.catalog import load_catalog
+
+    t = _track(s, a["track"])
+    if t is None:
+        return False
+    spec = load_catalog().get(a["device"])
+    for d in t.devices:
+        if d.device == a["device"] and spec and a["param"] in spec.params:
+            ps = spec.params[a["param"]]
+            v = ps.to_value(d.params.get(a["param"], ps.default))
+            return abs(v - a["target"]) <= abs(a["target"]) * a.get("tol_pct", 5.0) / 100
+    return False
+
+
+@check
 def clip_count(s, i, a):
     t = _track(s, a["track"])
     return t is not None and len(t.clips) == a["n"]

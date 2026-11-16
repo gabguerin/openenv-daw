@@ -45,18 +45,38 @@ def damage_violations(initial: Session, final: Session, touchable: list[str]) ->
     return out
 
 
+def _clip_budget(allowed: set[str]) -> dict[str, int] | None:
+    """``clip:<track>[:<n>]`` entries of ``allowed_new``: clips a new track may hold (default
+    1). None when the task declares no clip budget (older tasks), so nothing is checked."""
+    entries = [a for a in allowed if a.startswith("clip:")]
+    if not entries:
+        return None
+    out: dict[str, int] = {}
+    for a in entries:
+        name, _, n = a[5:].rpartition(":")
+        if name and n.isdigit():
+            out[name] = int(n)
+        else:
+            out[a[5:]] = 1
+    return out
+
+
 def extraneous_violations(initial: Session, final: Session, task: Any) -> list[str]:
     """Objects the task did not ask for: unlisted new tracks or devices, solo anywhere, and a new
     track fader above 0 dB. ``task.allowed_new`` lists track names, ``device:<id>`` entries and ``solo:<track>`` entries
     (for tasks that explicitly ask for a solo)."""
     allowed = {a.lower() for a in task.allowed_new}
     out: list[str] = []
+    budget = _clip_budget(allowed)
     old = {t.id: t for t in initial.tracks}
     for t in final.tracks:
         before = old.get(t.id)
         if before is None:
             if t.name.lower() not in allowed:
                 out.append(f"extra track {t.name}")
+            if budget is not None:
+                extra = len(t.clips) - budget.get(t.name.lower(), 0)
+                out.extend(f"extra clip on {t.name}" for _ in range(max(extra, 0)))
             if t.volume_db > 0.0:
                 out.append(f"new track {t.name} fader above 0 dB")
         if t.solo and not (before and before.solo) and f"solo:{t.name}".lower() not in allowed:
