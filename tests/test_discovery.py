@@ -8,9 +8,8 @@ from pathlib import Path
 import yaml
 from openenv.core.env_server.mcp_environment import get_server_tools
 from openenv.discovery.metadata import DiscoveryDeclaration
-
-from openenv_daw.backends import SimBackend
-from openenv_daw.tools import build_server
+from openenv_daw.server.backends import SimBackend
+from openenv_daw.server.tools import build_server
 
 ROOT = Path(__file__).resolve().parents[1]
 PREFIX = "packages/openenv-daw/"  # paths are repo-relative in the monorepo

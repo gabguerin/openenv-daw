@@ -1,5 +1,5 @@
-from openenv_daw.backends import SimBackend
-from openenv_daw.schema import Session
+from openenv_daw.server.backends import SimBackend
+from openenv_daw.server.sim.session import Session
 
 
 def call(b, tool, **kw):
@@ -108,9 +108,5 @@ def test_snapshot_restore_and_hash_determinism():
     assert Session.restore(snap).tempo_bpm == 128
 
 
-def test_profile_gating_and_render_unsupported():
-    b = SimBackend(profile="mixer_only")
-    assert call(b, "create_track", name="x", kind="midi")["error"]["code"] == "unsupported"
-    assert call(b, "set_transport", tempo_bpm=100)["ok"]
-    assert b.render(0, 8)["error"]["code"] == "unsupported"
+def test_unknown_tool_is_unsupported():
     assert call(SimBackend(), "bogus")["error"]["code"] == "unsupported"

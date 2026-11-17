@@ -9,48 +9,57 @@ import pytest
 
 pytest.importorskip("transformers")
 
-from openenv_daw.runner.report import ScriptedPolicy
-from openenv_daw.runner.rollout import InProcessAdapter, prompt_tools, run_episode
-from openenv_daw.runner.sft_export import export_sft
-from openenv_daw.tasks.store import default_store
-from openenv_daw.trl_env import DawToolEnv, tool_schemas
+from openenv_daw.server.tasks.store import default_store
+from openenv_daw.training.harness import DawSessionFactory, collect, scripted_model_step
+from openenv_daw.training.sft_export import export_sft
+from openenv_daw.training.trl_env import DawToolEnv, tool_schemas
 
 
-async def test_runner_tools_equal_trl_tools():
-    adapter = InProcessAdapter(default_store())
-    listed = await adapter.tools()
-    assert [t["function"]["name"] for t in prompt_tools(listed)] == [
-        t["function"]["name"] for t in tool_schemas()
-    ]
-    assert prompt_tools(listed) == list(tool_schemas())
+def test_session_tools_equal_trl_tools():
+    session = DawSessionFactory(default_store()).create(default_store().get_task("train", 0))
+    try:
+        tools = session.list_tools()
+    finally:
+        session.close()
+    expected = [s["function"] for s in tool_schemas()]
+    assert [t.name for t in tools] == [f["name"] for f in expected]
+    assert [t.input_schema for t in tools] == [f["parameters"] for f in expected]
     names = {n for n in dir(DawToolEnv) if not n.startswith("_")} - {"reset", "get_reward"}
-    assert names == {t["function"]["name"] for t in tool_schemas()}
-    await adapter.close()
+    assert names == {f["name"] for f in expected}
 
 
-async def test_tool_results_serialize_like_trl(tmp_path: Path):
+def test_tool_results_serialize_like_trl(tmp_path: Path):
     task = default_store().get_task("train", 0)
-    rec = await run_episode(
-        ScriptedPolicy("oracle", [task]), InProcessAdapter(default_store()), task.task_id
-    )
+    rec = collect(
+        DawSessionFactory(default_store()), scripted_model_step("oracle", [task]), [task], tmp_path
+    )[0]
     env = DawToolEnv()
     env.reset(task_id=task.task_id)
+    tool_msgs = [m["content"] for m in rec["messages"] if m["role"] == "tool"]
     for o in task.oracle[:2]:
-        trl_out = getattr(env, o.tool)(**o.args)
-        tool_msgs = [m["content"] for m in rec["messages"] if m["role"] == "tool"]
-        assert trl_out in tool_msgs
-    assert rec["nudges"] == 0
+        assert getattr(env, o.tool)(**o.args) in tool_msgs
 
 
-def test_export_drops_nudged_and_unmusical(tmp_path: Path):
-    base = {"success": True, "actions": [], "messages": [], "tools": []}
-    rows = [
-        {**base, "task_id": "a", "nudges": 0, "musicality": 0.9},
-        {**base, "task_id": "b", "nudges": 1, "musicality": 0.9},
-        {**base, "task_id": "c", "nudges": 0, "musicality": 0.3},
-        {**base, "task_id": "d", "nudges": 0, "musicality": None},
-    ]
-    src = tmp_path / "r.jsonl"
-    src.write_text("\n".join(json.dumps(r) for r in rows))
-    stats = export_sft(src, tmp_path / "sft.jsonl")
-    assert stats["kept"] == 2 and stats["nudged"] == 1 and stats["unmusical"] == 1
+def test_export_tools_are_the_trl_schemas(tmp_path: Path):
+    task = default_store().get_task("train", 0)
+    collect(
+        DawSessionFactory(default_store()),
+        scripted_model_step("oracle", [task]),
+        [task],
+        tmp_path / "r",
+    )
+    export_sft(tmp_path / "r", tmp_path / "sft.jsonl")
+    row = json.loads((tmp_path / "sft.jsonl").read_text().splitlines()[0])
+    assert json.loads(row["tools"]) == list(tool_schemas())
+
+
+def test_client_sends_the_trl_schemas():
+    from openenv_daw.training.harness import to_openai_tools
+    from openenv_daw.training.trl_env import tool_schemas
+
+    mcp = [
+        {"name": s["function"]["name"], "description": s["function"]["description"],
+         "inputSchema": s["function"]["parameters"]}
+        for s in tool_schemas()
+    ]  # fmt: skip
+    assert to_openai_tools(mcp) == list(tool_schemas())

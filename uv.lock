@@ -1906,7 +1906,7 @@ wheels = [
 
 [[package]]
 name = "openenv-daw"
-version = "0.4.0"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
@@ -1917,13 +1917,13 @@ dependencies = [
 
 [package.optional-dependencies]
 runner = [
-    { name = "httpx" },
     { name = "openai" },
 ]
 server = [
     { name = "uvicorn" },
 ]
 trl = [
+    { name = "datasets" },
     { name = "trl" },
 ]
 ui = [
@@ -1942,9 +1942,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "datasets", marker = "extra == 'trl'" },
     { name = "fastmcp", specifier = ">=3,<4" },
     { name = "gradio", extras = ["oauth"], marker = "extra == 'ui'", specifier = ">=4" },
-    { name = "httpx", marker = "extra == 'runner'", specifier = ">=0.27" },
     { name = "openai", marker = "extra == 'runner'", specifier = ">=1.40" },
     { name = "openenv", specifier = ">=0.13,<0.14" },
     { name = "pydantic", specifier = ">=2.7" },

@@ -1,16 +1,15 @@
 """Named presets, racks and plugins: library data, search, insertion and the adapter round trip."""
 
 import pytest
-
 from openenv_daw.adapters import MirrorBackend
 from openenv_daw.adapters.testing import FakeDriver
-from openenv_daw.backends.sim import SimBackend
-from openenv_daw.schema import Session
-from openenv_daw.sim.catalog import load_catalog, load_library, search_devices
+from openenv_daw.server.backends import SimBackend
+from openenv_daw.server.sim.catalog import load_catalog, load_library, search_devices
+from openenv_daw.server.sim.session import Session
 
 
-def sim(profile="portable"):
-    b = SimBackend(profile=profile)
+def sim():
+    b = SimBackend()
     assert b.call("create_track", {"name": "T", "kind": "midi"})["ok"]
     return b
 
@@ -38,7 +37,7 @@ def test_search_ranks_the_obvious_hit_first(query, expected):
 
 def test_search_filters_role_and_plugins():
     assert all(h["role"] == "audio_fx" for h in search_devices("reverb", role="audio_fx"))
-    assert all(h["kind"] != "plugin" for h in search_devices("serum", exclude=frozenset({"serum"})))
+    assert any(h["kind"] == "plugin" for h in search_devices("serum"))
 
 
 def test_list_devices_without_query_is_the_catalog_and_with_query_searches():
@@ -92,14 +91,12 @@ def test_rack_is_a_read_only_foreign_device():
     )
 
 
-def test_plugins_need_the_capability():
-    r = sim().call("insert_device", {"track": "T", "device": "serum"})
-    assert r["error"]["code"] == "unsupported"
-    assert all(
-        h["kind"] != "plugin" for h in sim().call("list_devices", {"query": "serum"})["devices"]
-    )
-    b = sim("portable_plugins")
+def test_plugins_load_as_read_only_devices():
+    b = sim()
     assert b.call("insert_device", {"track": "T", "device": "serum"})["ok"]
+    assert any(
+        h["kind"] == "plugin" for h in sim().call("list_devices", {"query": "serum"})["devices"]
+    )
 
 
 def test_state_hash_ignores_unset_library_fields():
@@ -113,7 +110,7 @@ def test_state_hash_ignores_unset_library_fields():
 
 @pytest.mark.parametrize("device", ["sub_bass", "kit_808", "reverb_hall", "mixing_chain", "serum"])
 def test_mirror_round_trip(device):
-    m = MirrorBackend(FakeDriver(), "portable_plugins")
+    m = MirrorBackend(FakeDriver())
     assert m.call(
         "create_track",
         {
@@ -137,53 +134,24 @@ def test_mirror_round_trip(device):
 # --- tasks ---------------------------------------------------------------------------------
 
 
-def test_load_sound_oracles_pass_in_the_sim_and_plugins_follow_the_profile():
-    from openenv_daw.env.episode import Episode
-    from openenv_daw.tasks.generators import generate
+def test_load_sound_oracles_pass_in_the_sim():
+    from openenv_daw.server.episode import Episode
+    from openenv_daw.server.tasks.generators import generate
 
-    seen = set()
     for split in ("train", "heldout"):
         for seed in range(40):
-            blocked = generate("load_sound", seed, split)  # portable: no plugins
-            task = generate("load_sound", seed, split, "portable_plugins")
+            task = generate("load_sound", seed, split)
             assert task.expected_status == "done"
-            assert blocked.expected_status == (
-                "blocked" if "third_party_plugin" in task.requires else "done"
-            )
-            ep = Episode(task, "portable_plugins", 60, 5)
+            ep = Episode(task, 60, 5)
             for step in task.oracle:
                 ep.run(step.tool, step.args)
             assert ep.score is not None and ep.score.reward == 1.0, (task.task_id, ep.score)
-            seen.add(blocked.expected_status)
-    assert seen == {"blocked", "done"}
-
-
-def test_an_unavailable_item_reroutes_described_requests_and_blocks_named_ones():
-    from openenv_daw.tasks.generators import generate
-    from openenv_daw.tasks.resolve import resolve_for_profile
-
-    named = next(
-        t for t in (generate("load_sound", i, "train") for i in range(40)) if "Sub Bass" in t.intent
-    )
-    assert (
-        resolve_for_profile(named, "portable", frozenset({"item:sub_bass"})).expected_status
-        == "blocked"
-    )
-    described = next(
-        t
-        for t in (generate("load_sound", i, "train") for i in range(60))
-        if "bass sound" in t.intent
-    )
-    r = resolve_for_profile(described, "portable", frozenset({"item:sub_bass"}))
-    assert r.expected_status == "done"
-    (loaded,) = [s.args["device"] for s in r.oracle if s.tool == "insert_device"]
-    assert loaded != "sub_bass" and "bass" in load_library()[loaded].tags
 
 
 def test_has_device_matches_presets_items_and_tags():
-    from openenv_daw.rewards.checks import CHECKS
+    from openenv_daw.server.rewards.checks import CHECKS
 
-    b = sim("portable_plugins")
+    b = sim()
     b.call("insert_device", {"track": "T", "device": "sub_bass"})
     b.call("create_track", {"name": "U", "kind": "midi"})
     b.call("insert_device", {"track": "U", "device": "serum"})
@@ -198,71 +166,19 @@ def test_has_device_matches_presets_items_and_tags():
     assert not has(s, s, {"track": "U", "device": "simple_synth"})
 
 
-# --- profile-neutral heldout, dual scores, adapter masks ------------------------------------------
+# --- adapters ----------------------------------------------------------------------------------
 
 
-def test_heldout_plugin_tasks_are_stored_loadable_and_resolve_per_profile():
-    from openenv_daw.tasks.resolve import resolve_for_profile
-    from openenv_daw.tasks.store import default_store
-
-    plugin = [t for t in default_store().heldout if "third_party_plugin" in t.requires]
-    assert plugin and all(t.expected_status == "done" for t in plugin)
-    for t in plugin:
-        assert resolve_for_profile(t, "portable").expected_status == "blocked"
-        assert resolve_for_profile(t, "portable_plugins").expected_status == "done"
-
-
-def test_uncatalogued_plugins_stay_blocked_in_every_profile():
-    from openenv_daw.tasks.generators import generate
-    from openenv_daw.tasks.resolve import resolve_for_profile
+def test_uncatalogued_plugins_are_blocked():
+    from openenv_daw.server.tasks.generators import generate
 
     for seed in range(20):
-        t = generate("infeasible", seed, "train", None)
-        assert t.expected_status == "blocked"
-        assert resolve_for_profile(t, "portable_plugins").expected_status == "blocked"
+        assert generate("infeasible", seed, "train").expected_status == "blocked"
 
 
-async def test_dual_eval_scores_the_same_tasks_under_both_profiles(tmp_path):
-    from openenv_daw.runner.report import evaluate_dual, load_task_set
-
-    tasks = load_task_set("heldout")
-    rep = await evaluate_dual("oracle", tasks, tmp_path)
-    assert rep["profile"] == "portable" and rep["success"] == len(tasks)
-    info = rep["informational"]["portable_plugins"]
-    assert info["profile"] == "portable_plugins" and info["success"] == len(tasks)
-    # plugin tasks are loadable only in the second report
-    assert info["by_expected_status"]["done"]["success"] > rep["by_expected_status"]["done"]["success"]
-    assert (tmp_path / "portable_plugins" / "rollouts.jsonl").is_file()
-
-
-def test_device_map_merge_and_profile_for():
+def test_device_map_merge():
     from openenv_daw.adapters import DeviceMap
-    from openenv_daw.sim.profiles import profile_for
 
     a = DeviceMap.from_dict({"devices": {"reverb": {"native": "Reverb"}}, "library": {}})
     b = a.merge({"library": {"reverb_hall": {"native": "Large Hall"}}})
     assert "reverb_hall" in b.library and not a.library
-    assert profile_for({"third_party_plugin"}) == "portable_plugins" and profile_for(set()) == "portable"
-
-
-def test_an_unmapped_item_blocks_a_named_task_in_the_episode_and_is_recorded():
-    from openenv_daw.adapters import DeviceMap
-    from openenv_daw.env.episode import Episode
-    from openenv_daw.tasks.generators import generate
-
-    task = next(
-        t for t in (generate("load_sound", i, "train") for i in range(40)) if "Sub Bass" in t.intent
-    )
-    assert task.expected_status == "done"
-    dm = DeviceMap.from_dict({"devices": {"simple_synth": {"native": "Synth"}}, "library": {}})
-    ep = Episode(
-        task,
-        "portable",
-        30,
-        3,
-        backend_factory=lambda p: MirrorBackend(FakeDriver(), p, dm, allow_destructive_load=True),
-    )
-    assert ep.task.expected_status == "blocked" and "item:sub_bass" in ep.adapter_masked
-    ep.run("submit", {"status": "blocked", "reason": "no such sound"})
-    meta = ep.result_metadata()
-    assert ep.score.success and meta["profile"] == "portable" and "item:sub_bass" in meta["adapter_masked"]

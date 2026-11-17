@@ -1,9 +1,7 @@
 import pytest
 from fastmcp import Client
-
-from openenv_daw.backends import SimBackend
-from openenv_daw.sim.profiles import PROFILES
-from openenv_daw.tools import build_server
+from openenv_daw.server.backends import TOOLS, SimBackend
+from openenv_daw.server.tools import build_server
 
 
 @pytest.fixture
@@ -12,11 +10,11 @@ def server():
     return build_server(lambda: b, on_submit=lambda s, r: {"ok": True, "status": s}), b
 
 
-async def test_lists_portable_tools_plus_submit(server):
+async def test_lists_tools_plus_submit(server):
     mcp, _ = server
     async with Client(mcp) as c:
         names = {t.name for t in await c.list_tools()}
-    assert names == set(PROFILES["portable"]["tools"]) | {"submit"}
+    assert names == set(TOOLS) | {"submit"}
 
 
 async def test_call_roundtrip_and_error_result(server):
@@ -35,14 +33,6 @@ async def test_call_roundtrip_and_error_result(server):
         bad = await c.call_tool("delete_track", {"track": "nope"})
         assert bad.data["ok"] is False and bad.data["error"]["code"] == "not_found"
     assert len(b.session.tracks) == 1
-
-
-async def test_profile_filters_tools():
-    b = SimBackend(profile="mixer_only")
-    mcp = build_server(lambda: b, profile="mixer_only")
-    async with Client(mcp) as c:
-        names = {t.name for t in await c.list_tools()}
-    assert names == set(PROFILES["mixer_only"]["tools"])
 
 
 async def test_instructions_exposed(server):

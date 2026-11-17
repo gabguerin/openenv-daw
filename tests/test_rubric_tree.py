@@ -6,10 +6,9 @@ import copy
 
 import pytest
 from openenv.core.env_server.mcp_types import CallToolAction
-
-from openenv_daw.env import DawEnvironment
-from openenv_daw.env.episode import Episode
-from openenv_daw.tasks.generators import families, generate
+from openenv_daw.server.daw_environment import DawEnvironment
+from openenv_daw.server.episode import Episode
+from openenv_daw.server.tasks.generators import families, generate
 
 
 def play(env, steps):
@@ -29,10 +28,8 @@ def collapse_pitches(task):
     return steps
 
 
-@pytest.mark.parametrize("mode", ["strict", "shaped"])
 @pytest.mark.parametrize("family", list(families()))
-def test_server_reward_matches_score(monkeypatch, mode, family):
-    monkeypatch.setenv("OPENENV_DAW_REWARD_MODE", mode)
+def test_server_reward_matches_score(family):
     env = DawEnvironment()
     for seed in range(4):
         t = generate(family, seed, "train")
@@ -41,15 +38,6 @@ def test_server_reward_matches_score(monkeypatch, mode, family):
             last = play(env, steps)
             assert last.done
             assert last.reward == pytest.approx(last.metadata["score"]["reward"])
-
-
-def test_shaped_mode_is_visible_to_the_server(monkeypatch):
-    monkeypatch.setenv("OPENENV_DAW_REWARD_MODE", "shaped")
-    t = generate("melody_in_key", 1, "train")
-    env = DawEnvironment()
-    env.reset(task_id=t.task_id)
-    last = play(env, collapse_pitches(t))
-    assert 0 < last.reward <= 0.1
 
 
 def test_every_leaf_has_a_score_after_a_terminal_step():
@@ -63,9 +51,9 @@ def test_every_leaf_has_a_score_after_a_terminal_step():
 
 
 def test_penalties_multiply_correctness(monkeypatch):
-    monkeypatch.setenv("OPENENV_DAW_MUSIC_WEIGHT", "0")
+    monkeypatch.setattr("openenv_daw.server.rewards.score.MUSIC_WEIGHT", 0.0)
     t = generate("melody_in_key", 0, "train")
-    ep = Episode(t, "portable", 30, 3)
+    ep = Episode(t, 30, 3)
     for o in t.oracle[:-1]:
         ep.run(o.tool, o.args)
     ep.run("create_track", {"name": "Extra", "kind": "midi"})

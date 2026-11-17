@@ -1,5 +1,4 @@
 import pytest
-
 from openenv_daw.adapters.changes import (
     AddTrack,
     RemoveTrack,
@@ -8,9 +7,9 @@ from openenv_daw.adapters.changes import (
     diff,
     same_session,
 )
-from openenv_daw.backends import SimBackend
-from openenv_daw.schema import Session
-from openenv_daw.tasks.store import default_store
+from openenv_daw.server.backends import SimBackend
+from openenv_daw.server.sim.session import Session
+from openenv_daw.server.tasks.store import default_store
 
 
 def oracle_states(task):

@@ -3,10 +3,9 @@ import json
 import pytest
 
 pytest.importorskip("transformers")
+from openenv_daw.server.tools import build_server  # noqa: E402
+from openenv_daw.training.trl_env import DawToolEnv, build_dataset  # noqa: E402
 from transformers.utils import get_json_schema  # noqa: E402
-
-from openenv_daw.tools.registry import build_server  # noqa: E402
-from openenv_daw.trl_env import DawToolEnv, build_dataset  # noqa: E402
 
 
 def _tool_methods():
@@ -19,8 +18,7 @@ def _tool_methods():
 
 def test_methods_match_registry_and_have_schemas():
     from openenv.core.env_server.mcp_environment import get_server_tools
-
-    from openenv_daw.backends import SimBackend
+    from openenv_daw.server.backends import SimBackend
 
     reg = set(get_server_tools(build_server(lambda: SimBackend(), on_submit=lambda s, r: {})))
     assert set(_tool_methods()) == reg and "submit" in reg

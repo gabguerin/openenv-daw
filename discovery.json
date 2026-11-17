@@ -30,6 +30,6 @@
       "set_device_param",
       "submit"
     ],
-    "source": "packages/openenv-daw/src/openenv_daw/tools/registry.py"
+    "source": "packages/openenv-daw/server/tools.py"
   }
 }

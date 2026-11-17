@@ -1,16 +1,14 @@
 # Changelog
 
-Contract versions (`openenv_daw.versions`) change whenever the tools, the Session schema or the
-instructions change. The `openenv_daw.adapters` API is provisional until a second driver exists.
+The `openenv_daw.adapters` API is provisional until a second driver exists.
 
-## 0.4.0
+## 0.6.0
 
 Breaking: rewards change when a task damages existing objects.
 
-- `DawRubric` is now a real rubric tree (`status`, `safety`, `critical` gates and a `quality`
-  blend) that computes the reward. The server (`obs.reward`), the TRL wrapper and the web UI all
-  use it, so they agree; `named_rubrics()` shows every component's `last_score`. Fixes shaped mode,
-  where the server returned 0.0 but the score said 0.1 x critical fraction.
+- `DawRubric` is a rubric tree (`status`, `safety`, `critical` gates and a `quality` blend) that
+  computes the reward. The server (`obs.reward`), the TRL wrapper and the web UI all use it, so
+  they agree; `named_rubrics()` shows every component's `last_score`.
 - Changing an object the task did not declare touchable is a hard gate (reward 0), not a 0.15
   subtraction. Extra objects and tool errors are multipliers on the correctness score
   (`1 - min(0.5, 0.15 n)` and `1 - min(0.2, 0.02 n)`), no longer subtracted.
@@ -19,6 +17,37 @@ Breaking: rewards change when a task damages existing objects.
   measurements the rubric scores.
 - Discovery: `discovery.json` (tags, representative queries, MCP tools, license) for
   `openenv catalog build`, with a CI job that builds the catalog and checks the env is found.
+
+## 0.5.0
+
+Breaking: rebuilt on the `openenv init` layout, with the guardrails that did not pay for their
+complexity removed.
+
+- Layout: `models.py`, `client.py`, `openenv.yaml` at the root; the environment is under `server/`
+  (`app.py`, `daw_environment.py`, `Dockerfile`, `sim/`, `tasks/`, `rewards/`, `ui/`). Import paths
+  are now `openenv_daw.server.*`.
+- Removed: capability profiles, `requires`, parameter masks and `supported: false`, shaped reward
+  mode, contract versions, `inconsistent_state`, mirror verification and rollback (`Tolerances`),
+  `Driver.capabilities`/`native_undo`/`undo_last`, `render`, the Task API and foreign-object
+  injection in generated tasks.
+- Held-out set is a single `server/tasks/heldout.jsonl` (212 tasks); older `heldout_v*` are gone.
+- `Episode(task, max_steps, max_consecutive_errors, backend_factory)`, `resolve_backend(name)()`
+  and `make_environment_class(...)` take no profile.
+- `scripts/typecheck.sh` runs mypy for the new layout.
+
+## 0.4.0
+
+Breaking: the bespoke runner is replaced by OpenEnv's harness.
+
+- `openenv_daw.harness`: `DawSessionFactory` / `DawSession` (a `ResourceSession`), `collect`
+  (threaded `MCPHarnessAdapter` rollouts into `RolloutSerializer`'s `results.jsonl`, resumable,
+  Hub-pushable), `teacher_client` (OpenAI, Anthropic or any OpenAI-compatible endpoint) and
+  `scripted_model_step` (oracle, noop, submit_only, blocked, random).
+- Removed `runner.client` (`Policy`, `OpenAIPolicy`) and `runner.rollout` (adapters, nudging loop,
+  `run_many`). CLI: `runner collect|export|eval`, flags follow `openenv collect`.
+- `export_sft` reads collect dirs and writes `{messages, tools (JSON string), reward, task_id}`.
+- `build_dataset_for` is `build_dataset(task_ids=...)`; `examples/sft_warmup.py` added;
+  `examples/grpo_train.py` disables Qwen3 thinking.
 
 ## 0.3.0
 

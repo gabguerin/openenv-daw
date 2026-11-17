@@ -1,2 +1,7 @@
-"""OpenEnv layout shim: ``openenv push`` expects ``__init__.py`` and ``client.py`` at the package
-root. The real package is ``src/openenv_daw`` (this file is not part of the wheel)."""
+"""openenv-daw: an OpenEnv environment for DAW tool use, and an SDK for DAW adapters."""
+
+from openenv.core.env_server.mcp_types import CallToolAction
+from openenv_daw.client import DawEnv
+from openenv_daw.models import DawObservation, DawState
+
+__all__ = ["CallToolAction", "DawEnv", "DawObservation", "DawState"]

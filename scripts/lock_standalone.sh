@@ -10,7 +10,6 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 cp "$pkg/pyproject.toml" "$pkg/README.md" "$pkg/LICENSE" "$tmp/"
-mkdir -p "$tmp/src/openenv_daw" && touch "$tmp/src/openenv_daw/__init__.py"
 
 pins="$(cd "$root" && uv export --package openenv-daw --frozen --all-extras --no-dev \
   --no-emit-workspace --no-hashes --no-annotate --no-header)"
