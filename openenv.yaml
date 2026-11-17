@@ -1,11 +1,17 @@
 spec_version: 1
 name: openenv_daw
-version: 0.2.0
+version: 0.3.0
 type: space
 runtime: fastapi
 app: openenv_daw.server.app:app
 port: 8000
 validation:
+  execution:
+    kind: openenv_ws
+    probe_path: validation/runtime.json
+    dockerfile: Dockerfile
+    context: .
+    agent_boundary: api
   reward:
     range: [0.0, 1.0]
     oracle_tolerance: 0.0
@@ -18,6 +24,11 @@ validation:
   capabilities:
     verifier:
       kind: reward_channel
+    rubric_tree: true
+    task_api: true
+    declared_task_count:
+      train: 1000000000
+      heldout: 212
     declared_tools:
       - get_session
       - set_transport

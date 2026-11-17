@@ -139,7 +139,14 @@ def _score(observation: Any) -> dict[str, Any] | None:
     return observation.metadata.get("score") if getattr(observation, "done", False) else None
 
 
-class CriticalGate(Rubric):
+class _PublicRubric(Rubric):
+    """A rubric whose configuration is public, so ``openenv validate`` can introspect it."""
+
+    def validation_config(self) -> dict[str, Any]:
+        return {}
+
+
+class CriticalGate(_PublicRubric):
     """1.0 when no critical check failed and the submit status is acceptable, else 0.0."""
 
     def forward(self, action: Any, observation: Any) -> float:
@@ -149,7 +156,7 @@ class CriticalGate(Rubric):
         return 1.0 if s["gate_passed"] else 0.0
 
 
-class NetScore(Rubric):
+class NetScore(_PublicRubric):
     """Fraction of non-critical checks passed, minus damage and error penalties."""
 
     def forward(self, action: Any, observation: Any) -> float:
@@ -159,7 +166,7 @@ class NetScore(Rubric):
         return max(0.0, s["fraction"] - s["damage_penalty"] - s["error_penalty"])
 
 
-class Musicality(Rubric):
+class Musicality(_PublicRubric):
     """Soft musicality bonus in [0, 1]: musicality over ``MUSIC_FULL``, capped at 1. Tasks that
     are not about music score 1.0, so the rubric never lowers them."""
 
@@ -170,8 +177,11 @@ class Musicality(Rubric):
         return min(1.0, s["musicality"] / MUSIC_FULL)
 
 
-class BlendedScore(Rubric):
+class BlendedScore(_PublicRubric):
     """The episode reward: ``NetScore`` blended with ``Musicality`` for musical tasks."""
+
+    def validation_config(self) -> dict[str, Any]:
+        return {"music_weight": music_weight(), "music_full": MUSIC_FULL}
 
     def __init__(self) -> None:
         super().__init__()
@@ -188,3 +198,6 @@ class BlendedScore(Rubric):
 class DawRubric(Sequential):
     def __init__(self) -> None:
         super().__init__(CriticalGate(), BlendedScore())
+
+    def validation_config(self) -> dict[str, Any]:
+        return {}  # a Sequential subclass: gate first, then the blended score

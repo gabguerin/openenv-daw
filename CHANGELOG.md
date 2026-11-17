@@ -3,6 +3,35 @@
 Contract versions (`openenv_daw.versions`) change whenever the tools, the Session schema or the
 instructions change. The `openenv_daw.adapters` API is provisional until a second driver exists.
 
+## 0.3.0
+
+Breaking: rewards change for train and heldout tasks (stricter checks, musicality blend).
+
+- Scoring: soft musicality blend `reward = (1 - W) * net + W * min(1, musicality / 0.8)` with W = 0.2
+  (`OPENENV_DAW_MUSIC_WEIGHT`, 0 disables), applied only when the correctness gate passes; `success`
+  stays correctness-only. Heuristics (melody contour, cadence, rhythm, motifs; chord voice leading;
+  drum accents) are calibrated on 50 Nottingham folk tunes (`tests/fixtures/reference_melodies.json`).
+- Reward holes closed: chords need at least 3 notes per bar, spread within a quarter beat, held for
+  half a bar; new checks `notes_every_bar`, `notes_transposed`, `existing_notes_kept_except`; hi-hat
+  and range checks; a submit-only policy scores 0 on every feasible task. `music.roman_chord` reads
+  numeral case (quality) and `voice_lead` builds smooth voicings.
+- Generators: motif-based melodies (best of 40 by melody score), voice-led chord oracles, `prog_major`
+  / `prog_minor` pools (train and heldout disjoint), drum velocity accents, device_tweak avoids
+  default values, session_setup avoids default 4/4 at 120.
+- `heldout_v6.jsonl` (212 tasks, at least 15 per family) is the default. `heldout_v5` stays frozen but
+  is no longer oracle-valid for chord tasks.
+- Runner: `submit_only` policy, per-group musicality, tool schemas identical to TRL's, plain
+  `json.dumps` tool results; SFT export drops episodes with nudges or musicality below 0.6.
+- `trl_env`: `reward_mode` may be a callable, `tool_schemas`, stratified `build_dataset`.
+- TOOLSET 1.3: one instructions line about musicality.
+- OpenEnv standard: `/metadata` carries name, description, version and README; Task API
+  (`splits`, `tasks`, `num_tasks`, `task`, `task_range`, prompt-level fields only, train
+  `tasks` is a 20-task preview); `openenv.yaml` declares `rubric_tree`, `task_api` and task counts;
+  `server` script.
+- Image: built on `ghcr.io/huggingface/openenv-base` with `uv sync` from `uv.lock`
+  (`scripts/lock_standalone.sh`, pinned to the monorepo lock); `requirements.lock` is gone. The Space
+  runs on `cpu-basic`.
+
 ## 0.2.0
 
 - New families: `chord_progression`, `edit_notes`, `device_tweak` (check `device_param_display_in`),

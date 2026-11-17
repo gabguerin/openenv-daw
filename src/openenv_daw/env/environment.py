@@ -18,11 +18,12 @@ from openenv.core.env_server.mcp_types import (
     CallToolObservation,
     ListToolsAction,
 )
-from openenv.core.env_server.types import Action, Observation
+from openenv.core.env_server.types import Action, EnvironmentMetadata, Observation
 
 from openenv_daw.backends import Backend, SimBackend
 from openenv_daw.rewards import DawRubric
 from openenv_daw.sim.profiles import DEFAULT_PROFILE
+from openenv_daw.tasks.model import Task
 from openenv_daw.tasks.resolve import apply_param_mask
 from openenv_daw.tasks.store import TaskStore, default_store
 from openenv_daw.tools import build_server
@@ -36,6 +37,25 @@ PARAM_MASK_PROB = float(
 )  # train split only; DawToolEnv defaults to 0.1
 MAX_STEPS = int(os.getenv("OPENENV_DAW_MAX_STEPS", "30"))
 MAX_CONSECUTIVE_ERRORS = int(os.getenv("OPENENV_DAW_MAX_CONSECUTIVE_ERRORS", "3"))
+
+
+def package_metadata() -> EnvironmentMetadata:
+    from importlib import metadata
+
+    try:
+        md = metadata.metadata("openenv-daw")
+        version = md["Version"]
+        description = md["Summary"] or "DAW tool-use environment"
+        readme = metadata.metadata("openenv-daw").json.get("description") or None  # long description
+    except metadata.PackageNotFoundError:  # running from a source tree
+        version, description, readme = "0.0.0", "DAW tool-use environment", None
+    return EnvironmentMetadata(
+        name="openenv_daw",
+        description=description,
+        readme_content=readme,
+        version=version,
+        documentation_url="https://huggingface.co/spaces/gabguerin/openenv-daw",
+    )
 
 
 def result_data(obs: CallToolObservation) -> dict[str, Any] | None:
@@ -228,6 +248,58 @@ class DawEnvironment(MCPEnvironment):
     @property
     def state(self) -> DawState:
         return self._state
+
+    # --- metadata and Task API (OpenEnv standard) ---------------------------------------
+    def get_metadata(self) -> EnvironmentMetadata:
+        return package_metadata()
+
+    TRAIN_PREVIEW = 20  # train is generated from seeds; list_tasks returns a bounded preview
+
+    @staticmethod
+    def _task_spec(task: Task) -> dict[str, Any]:
+        """Prompt-level view of a task: no checks, no oracle."""
+        return {
+            "task_id": task.task_id,
+            "family": task.family,
+            "split": task.split,
+            "intent": task.intent,
+            "tags": task.tags,
+            "expected_status": task.expected_status,
+        }
+
+    def _check_split(self, split: str) -> None:
+        if split not in self.store.list_splits():
+            raise IndexError(f"unknown split {split!r}")
+
+    def list_splits(self) -> list[dict[str, str]]:
+        return [
+            {"name": s, "type": "train" if s == "train" else "test"}
+            for s in self.store.list_splits()
+        ]
+
+    def num_tasks(self, split: str) -> int:
+        self._check_split(split)
+        return self.store.num_tasks(split)
+
+    def get_task(self, split: str, index: int) -> dict[str, Any]:
+        self._check_split(split)
+        if index < 0 or index >= self.store.num_tasks(split):
+            raise IndexError(index)
+        return self._task_spec(self.store.get_task(split, index, self.profile))
+
+    def get_task_range(
+        self, split: str, start: int | None = None, stop: int | None = None
+    ) -> list[dict[str, Any]]:
+        n = self.num_tasks(split)
+        lo, hi, _ = slice(start, stop).indices(n)
+        if hi - lo > 1000:
+            raise IndexError("range too large (max 1000 tasks)")
+        return [self.get_task(split, i) for i in range(lo, hi)]
+
+    def list_tasks(self, split: str) -> list[dict[str, Any]]:
+        """All heldout tasks; a preview of the first seeds for the unbounded train split."""
+        n = self.num_tasks(split)
+        return self.get_task_range(split, 0, min(n, self.TRAIN_PREVIEW) if split == "train" else n)
 
 
 __all__ = ["CallToolAction", "DawEnvironment", "ListToolsAction", "result_data"]

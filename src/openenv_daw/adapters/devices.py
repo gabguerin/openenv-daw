@@ -24,7 +24,6 @@ import yaml
 
 from openenv_daw.sim.catalog import ParamSpec, load_catalog, load_library
 
-
 _SUFFIXES = (".adv", ".adg", ".adp", ".amxd", ".vstpreset", ".fxp")
 
 

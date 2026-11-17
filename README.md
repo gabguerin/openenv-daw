@@ -107,7 +107,22 @@ With `ENABLE_WEB_INTERFACE=true` the server mounts a UI at `/web`: a **DAW Studi
 environment per visitor, arrangement view with piano rolls, live checks with the reward of submitting
 `done` or `blocked` now, manual tool calls, oracle stepping, trajectory download) and the
 stock shared Playground.
-Deploy with the `space-openenv-daw` workflow (manual or `space-v*` tags) or `openenv push`.
+Deploy with the `space-openenv-daw` workflow (manual or `space-v*` tags) or
+`openenv push --repo-id <you>/openenv-daw --hardware cpu-basic --exclude .hfexclude`. The UI runs
+no model, so the Space needs only `cpu-basic`.
+
+Use the deployed environment from Python:
+
+```bash
+pip install git+https://huggingface.co/spaces/gabguerin/openenv-daw
+```
+
+```python
+from openenv_daw.env.client import DawEnv
+
+with DawEnv.from_env("gabguerin/openenv-daw").sync() as env:  # starts the Space image with Docker
+    env.reset(split="heldout", index=0)
+```
 Install the extras with `uv sync --extra server --extra ui`.
 
 ## Reward modes

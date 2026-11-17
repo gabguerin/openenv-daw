@@ -755,7 +755,7 @@ def gen_load_sound(rng: random.Random, pool: dict[str, list[Any]], used: set[str
         vals["plugin"] = item.name
         query = item.name
     if tag is not None:
-        match = {"tags_any": [tag]}
+        match: dict[str, Any] = {"tags_any": [tag]}
     elif item.kind == "preset":
         match = {"preset": item.id}
     else:
