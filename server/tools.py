@@ -129,6 +129,31 @@ def build_server(
         return call("delete_clip", clip=clip)
 
     @tool
+    def update_midi_clip(
+        clip: str,
+        name: str | None = None,
+        start_beat: float | None = None,
+        length_beats: float | None = None,
+    ) -> Result:
+        """Rename, move and/or resize a MIDI clip. Omitted fields stay unchanged. The clip cannot
+        overlap another clip, and cannot become shorter than its last note (remove those notes
+        first).
+
+        Args:
+            clip: Clip id or unique name.
+            name: New clip name.
+            start_beat: New start on the timeline, in beats from 0.
+            length_beats: New length in beats.
+        """
+        return call(
+            "update_midi_clip",
+            clip=clip,
+            name=name,
+            start_beat=start_beat,
+            length_beats=length_beats,
+        )
+
+    @tool
     def insert_midi_notes(clip: str, notes: list[NoteIn]) -> Result:
         """Add MIDI notes to a clip. Notes must fit inside the clip, and notes of the same pitch
         cannot overlap. All notes are validated first; if any is invalid nothing is added.
@@ -217,8 +242,19 @@ def build_server(
         return call("insert_device", track=track, device=device, position=position)
 
     @tool
+    def delete_device(track: str, device: str) -> Result:
+        """Remove a device from a track's chain. Racks and plugins cannot be removed.
+
+        Args:
+            track: Track id or name.
+            device: Device instance id (for example dev_1) or its unique device name.
+        """
+        return call("delete_device", track=track, device=device)
+
+    @tool
     def get_device_params(track: str, device: str, query: str | None = None) -> Result:
-        """Read a device's parameters: normalized value (0..1), display value and unit.
+        """Read a device's parameters: normalized value (0..1), display value, unit, and the
+        min, max and scale that map one to the other (stepped parameters list their steps).
 
         Args:
             track: Track id or name.
@@ -228,16 +264,33 @@ def build_server(
         return call("get_device_params", track=track, device=device, query=query)
 
     @tool
-    def set_device_param(track: str, device: str, param: str, value: float) -> Result:
-        """Set one device parameter to a normalized value between 0 and 1.
+    def set_device_param(
+        track: str,
+        device: str,
+        param: str,
+        value: float | None = None,
+        display_value: float | str | None = None,
+    ) -> Result:
+        """Set one device parameter. Give exactly one of display_value (in the parameter's own
+        unit, for example 800 for 800 Hz, or "sine" for a stepped parameter) or value (normalized,
+        0 to 1).
 
         Args:
             track: Track id or name.
             device: Device instance id or its unique device name.
             param: Parameter name from get_device_params.
             value: Normalized value, 0 to 1.
+            display_value: Value in the parameter's unit within its min..max range; a step name
+                for stepped parameters.
         """
-        return call("set_device_param", track=track, device=device, param=param, value=value)
+        return call(
+            "set_device_param",
+            track=track,
+            device=device,
+            param=param,
+            value=value,
+            display_value=display_value,
+        )
 
     if on_submit is not None:
 

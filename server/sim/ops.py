@@ -139,15 +139,19 @@ def param_infos(d: Device, query: str | None = None) -> list[dict[str, Any]]:
         if query and query.lower() not in name.lower():
             continue
         val = d.params.get(name, ps.default)
-        out.append(
-            {
-                "name": name,
-                "value": round(val, 4),
-                "display": ps.display(val),
-                "default": ps.default,
-                "unit": ps.unit,
-            }
-        )
+        info: dict[str, Any] = {
+            "name": name,
+            "value": round(val, 4),
+            "display": ps.display(val),
+            "default": ps.default,
+            "unit": ps.unit,
+            "min": ps.min,
+            "max": ps.max,
+            "scale": ps.scale,
+        }
+        if ps.steps:
+            info["steps"] = list(ps.steps)
+        out.append(info)
     return out
 
 
@@ -502,6 +506,45 @@ def insert_device(
     return {"ok": True, "track": t.id, "position": pos, "device": device_view(dev, params=True)}
 
 
+def _display_to_norm(ps: Any, dv: float | str) -> float:
+    """Normalized position for a display value; stepped parameters take a step name or index."""
+    if ps.scale == "steps":
+        if isinstance(dv, str):
+            names = [x.lower() for x in ps.steps]
+            if dv.strip().lower() in names:
+                idx = names.index(dv.strip().lower())
+            else:
+                try:
+                    dv = float(dv)
+                except ValueError:
+                    raise invalid(
+                        f"{dv!r} is not a step of {ps.name!r}; steps: {list(ps.steps)}"
+                    ) from None
+                idx = None
+        else:
+            idx = None
+        if idx is None:
+            f = float(dv)
+            if f != int(f) or not 0 <= f < len(ps.steps):
+                raise invalid(
+                    f"display_value {dv!r} is not a step of {ps.name!r}; steps: {list(ps.steps)}"
+                )
+            idx = int(f)
+        return ps.to_norm(float(idx))
+    if isinstance(dv, str):
+        try:
+            dv = float(dv)
+        except ValueError:
+            raise invalid(
+                f"{ps.name!r} is continuous; display_value must be a number "
+                f"({ps.min:g}..{ps.max:g} {ps.unit})".rstrip()
+            ) from None
+    eps = 1e-9 * max(1.0, abs(ps.max - ps.min))
+    if not ps.min - eps <= float(dv) <= ps.max + eps:
+        raise invalid(f"display_value {dv} is outside {ps.min:g}..{ps.max:g} {ps.unit}".rstrip())
+    return ps.to_norm(float(dv))
+
+
 def get_device_params(
     s: Session, track: str, device: str, query: str | None = None
 ) -> dict[str, Any]:
@@ -516,8 +559,71 @@ def get_device_params(
     return {"ok": True, "track": t.id, "device": d.id, "params": param_infos(d, query)}
 
 
+def delete_device(s: Session, track: str, device: str) -> dict[str, Any]:
+    t = _writable(find_track(s, track))
+    if not any(d.id == device for d in t.devices) and find_foreign_device(t, device):
+        fd = find_foreign_device(t, device)
+        assert fd is not None
+        raise unsupported(
+            f"device {fd.name!r} ({fd.id}) is foreign; racks and plugins cannot be removed here"
+        )
+    d = find_device(t, device)
+    t.devices.remove(d)
+    return {"ok": True, "deleted": d.id}
+
+
+def update_midi_clip(
+    s: Session,
+    clip: str,
+    name: str | None = None,
+    start_beat: float | None = None,
+    length_beats: float | None = None,
+) -> dict[str, Any]:
+    t, c = find_clip(s, clip)
+    _writable(t)
+    if name is None and start_beat is None and length_beats is None:
+        raise invalid("provide at least one of name, start_beat, length_beats")
+    new_name = c.name
+    if name is not None:
+        new_name = name.strip()
+        if not new_name:
+            raise invalid("name must not be empty")
+    start, length = c.start_beat, c.length_beats
+    if start_beat is not None:
+        if start_beat < 0:
+            raise invalid("start_beat must be >= 0")
+        start = snap(start_beat)
+    if length_beats is not None:
+        length = snap(length_beats)
+        if length < GRID:
+            raise invalid(f"length_beats must be at least 1/{GRID_DIVISIONS} beat")
+    end = start + length
+    for o in t.clips:
+        if o is not c and start < o.end_beat and o.start_beat < end:
+            raise conflict(
+                f"clip would overlap {o.name!r} ({o.id}) at beats {o.start_beat}..{o.end_beat}"
+            )
+    last = max((n.start_beat + n.duration_beats for n in c.notes), default=0.0)
+    if last > length + 1e-9:
+        raise invalid(
+            f"clip {c.name!r} has notes up to beat {last}; a length of {length} would cut them. "
+            f"Remove the notes ending after beat {length} first"
+        )
+    snapped = (start_beat is not None and start != start_beat) or (
+        length_beats is not None and length != length_beats
+    )
+    c.name, c.start_beat, c.length_beats = new_name, start, length
+    t.clips.sort(key=lambda x: x.start_beat)
+    return {"ok": True, "clip": clip_view(c, t), "snapped": snapped}
+
+
 def set_device_param(
-    s: Session, track: str, device: str, param: str, value: float
+    s: Session,
+    track: str,
+    device: str,
+    param: str,
+    value: float | None = None,
+    display_value: float | str | None = None,
 ) -> dict[str, Any]:
     t = find_track(s, track)
     d = find_device(t, device)
@@ -525,6 +631,12 @@ def set_device_param(
     match = [n for n in spec.params if n.lower() == param.lower()]
     if not match:
         raise not_found(f"device {d.device!r} has no parameter {param!r}; have {list(spec.params)}")
+    if (value is None) == (display_value is None):
+        raise invalid("provide exactly one of value (normalized 0..1) or display_value")
+    ps = spec.params[match[0]]
+    if display_value is not None:
+        value = _display_to_norm(ps, display_value)
+    assert value is not None
     if not 0.0 <= float(value) <= 1.0:
         raise invalid("value must be normalized within 0..1")
     d.params[match[0]] = round(float(value), 4)

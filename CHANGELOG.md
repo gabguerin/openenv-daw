@@ -2,6 +2,24 @@
 
 The `openenv_daw.adapters` API is provisional until a second driver exists.
 
+## 0.7.0
+
+Two tools and display-unit parameters. Rewards of existing tasks are unchanged.
+
+- New tools `delete_device` (catalog devices only; racks and plugins are `unsupported`) and
+  `update_midi_clip` (rename, move, resize; snaps to the grid, overlaps are `conflict`, shrinking
+  below the last note is `invalid_args`, notes are never trimmed). The simulator emits the existing
+  `RemoveDevice` and `UpdateClip` changes, so drivers need no new code.
+- `set_device_param` takes `display_value` (a number in the parameter's unit, or a step name for
+  stepped parameters) or `value`; exactly one of the two. Out-of-range values are `invalid_args`.
+  `get_device_params` also returns `min`, `max`, `scale` and `steps`.
+- Adapters: `MirrorBackend` reads the notes of a clip before `update_midi_clip`, and `IdMap.bind`
+  drops the old native key when an id is rebound. `adapters.testing` adds `TOOL_SCENARIOS` and
+  `assert_tool_scenarios`, which cover tools no task oracle uses. The Ableton driver warns that a
+  move rebuilds the clip.
+- Follow-up: no task template uses the new tools yet, so trained policies will not learn them
+  until tasks do. In-place note edits and a track index argument are left out on purpose.
+
 ## 0.6.0
 
 Breaking: rewards change when a task damages existing objects.

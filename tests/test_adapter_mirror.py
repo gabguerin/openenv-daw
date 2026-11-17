@@ -99,3 +99,33 @@ async def test_mcp_server_exposes_portable_tools_through_mirror():
         r = await c.call_tool("create_track", {"name": "Lead", "kind": "midi"})
         assert r.data["ok"] is True
     assert [t.name for t in m.session.tracks] == ["Lead"]
+
+
+@pytest.mark.parametrize("lossy", [False, True])
+def test_tool_scenarios(lossy):
+    from openenv_daw.adapters.testing import assert_tool_scenarios
+
+    assert assert_tool_scenarios(lambda: FakeDriver(lossy=lossy), lossless=not lossy) >= 3
+
+
+def test_scenarios_cover_every_tool():
+    from openenv_daw.adapters.testing import scenario_tools
+    from openenv_daw.server.backends import TOOLS
+
+    assert set(TOOLS) <= scenario_tools()
+
+
+def test_clip_move_keeps_notes_and_shrink_is_refused_from_the_daw_notes():
+    d, m = mirror()
+    m.call("create_track", {"name": "Lead", "kind": "midi"})
+    m.call("create_midi_clip", {"track": "Lead", "start_beat": 0, "length_beats": 4, "name": "A"})
+    m.call(
+        "insert_midi_notes",
+        {"clip": "A", "notes": [{"pitch": 60, "start_beat": 3, "duration_beats": 1}]},
+    )
+    assert m.call("update_midi_clip", {"clip": "A", "start_beat": 8})["ok"]
+    clip = m.session.tracks[0].clips[0]
+    assert clip.start_beat == 8 and len(clip.notes) == 1
+    n = d.apply_calls
+    r = m.call("update_midi_clip", {"clip": "A", "length_beats": 2})
+    assert r["error"]["code"] == "invalid_args" and d.apply_calls == n

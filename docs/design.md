@@ -11,7 +11,7 @@ and `scripts/`.
 
 ## Tools
 
-15 portable tools plus `submit`, declared once as a FastMCP server (`server/tools.py`). Tool
+17 portable tools plus `submit`, declared once as a FastMCP server (`server/tools.py`). Tool
 results are JSON. Mutating tools return the affected object. Errors are typed: `not_found`,
 `invalid_args`, `conflict`, `unsupported`, `execution_error`.
 

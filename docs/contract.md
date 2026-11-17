@@ -1,8 +1,8 @@
 # The portable contract
 
 - **Tools**: `get_session`, `set_transport`, `create_track`, `delete_track`, `rename_track`,
-  `create_midi_clip`, `delete_clip`, `insert_midi_notes`, `remove_midi_notes`,
-  `set_mixer_channel`, `set_send`, `list_devices`, `insert_device`, `get_device_params`,
+  `create_midi_clip`, `delete_clip`, `update_midi_clip`, `insert_midi_notes`, `remove_midi_notes`,
+  `set_mixer_channel`, `set_send`, `list_devices`, `insert_device`, `delete_device`, `get_device_params`,
   `set_device_param`, plus `submit` in the training environment only. Adapters never add tools.
   `list_devices(query=)` searches the canonical library of presets, kits, racks and plugins and
   `insert_device` takes a catalog or library id, so an agent never handles DAW paths or URIs.

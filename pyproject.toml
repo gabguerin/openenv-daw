@@ -1,6 +1,6 @@
 [project]
 name = "openenv-daw"
-version = "0.6.0"
+version = "0.7.0"
 description = "OpenEnv environment for DAW tool use: a lightweight JSON DAW simulator behind a portable MCP tool set"
 readme = "README.md"
 license = { text = "Apache-2.0" }

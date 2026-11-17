@@ -68,7 +68,12 @@ class MirrorBackend:
                 except DawError:
                     return frozenset()
             return "all"
-        if tool in ("insert_midi_notes", "remove_midi_notes", "delete_clip") and args.get("clip"):
+        if tool in (
+            "insert_midi_notes",
+            "remove_midi_notes",
+            "delete_clip",
+            "update_midi_clip",
+        ) and args.get("clip"):
             try:
                 return {ops.find_clip(s, str(args["clip"]))[1].id}
             except DawError:

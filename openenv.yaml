@@ -1,6 +1,6 @@
 spec_version: 1
 name: openenv_daw
-version: 0.6.0
+version: 0.7.0
 type: space
 runtime: fastapi
 app: openenv_daw.server.app:app
@@ -31,12 +31,16 @@ validation:
       - rename_track
       - create_midi_clip
       - delete_clip
+      - update_midi_clip
+      - update_midi_clip
       - insert_midi_notes
       - remove_midi_notes
       - set_mixer_channel
       - set_send
       - list_devices
       - insert_device
+      - delete_device
+      - delete_device
       - get_device_params
       - set_device_param
       - submit

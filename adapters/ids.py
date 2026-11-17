@@ -23,6 +23,9 @@ class IdMap:
 
     def bind(self, canonical: str, native: str) -> None:
         prefix = self.prefix(canonical)
+        old = self._c2n.get(canonical)
+        if old is not None and old != native:  # rebound (a clip rebuilt under a new key)
+            self._n2c.pop((prefix, old), None)
         self._n2c[(prefix, native)] = canonical
         self._c2n[canonical] = native
         self.counters[prefix] = max(self.counters.get(prefix, 0), int(canonical.rsplit("_", 1)[1]))

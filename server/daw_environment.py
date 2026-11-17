@@ -169,7 +169,7 @@ class DawEnvironment(MCPEnvironment):
         return EnvironmentMetadata(
             name="openenv_daw",
             description="DAW tool-use environment: a JSON DAW simulator behind portable MCP tools",
-            version="0.6.0",
+            version="0.7.0",
             documentation_url="https://huggingface.co/spaces/gabguerin/openenv-daw",
         )
 

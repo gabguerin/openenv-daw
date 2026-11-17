@@ -203,6 +203,95 @@ def _servable(task: Task, device_map: DeviceMap | None) -> bool:
     return True
 
 
+_N = [{"pitch": 60, "start_beat": 0, "duration_beats": 1, "velocity": 100}]
+_N2 = [{"pitch": 62, "start_beat": 3, "duration_beats": 1, "velocity": 90}]
+
+# Short call scripts over fresh projects: (tool, args, expected ok). A failing call must leave the
+# DAW unchanged. Together they use every tool of CORE_TOOLS successfully at least once.
+TOOL_SCENARIOS: dict[str, list[tuple[str, dict[str, Any], bool]]] = {
+    "project_and_tracks": [
+        ("set_transport", {"tempo_bpm": 96, "time_signature": [3, 4]}, True),
+        ("create_track", {"name": "Lead", "kind": "midi"}, True),
+        ("create_track", {"name": "Hall", "kind": "return"}, True),
+        ("rename_track", {"track": "Lead", "name": "Keys"}, True),
+        ("set_mixer_channel", {"track": "Keys", "volume_db": -6, "pan": 0.5, "mute": True}, True),
+        ("set_send", {"track": "Keys", "return_track": "Hall", "level_db": -12}, True),
+        ("get_session", {"include_notes": True}, True),
+        ("create_track", {"name": "Tmp", "kind": "audio"}, True),
+        ("delete_track", {"track": "Tmp"}, True),
+    ],
+    "clips_and_notes": [
+        ("create_track", {"name": "Lead", "kind": "midi"}, True),
+        ("create_midi_clip", {"track": "Lead", "start_beat": 0, "length_beats": 4, "name": "A"}, True),
+        ("insert_midi_notes", {"clip": "A", "notes": _N + _N2}, True),
+        ("update_midi_clip", {"clip": "A", "name": "Hook"}, True),
+        ("update_midi_clip", {"clip": "Hook", "start_beat": 8}, True),
+        ("update_midi_clip", {"clip": "Hook", "length_beats": 8}, True),
+        ("update_midi_clip", {"clip": "Hook", "start_beat": 4, "length_beats": 6, "name": "H2"}, True),
+        ("update_midi_clip", {"clip": "H2", "length_beats": 2}, False),  # would cut a note
+        ("remove_midi_notes", {"clip": "H2", "pitch": 62}, True),
+        ("update_midi_clip", {"clip": "H2", "length_beats": 2}, True),
+        ("get_session", {"include_notes": True}, True),
+        ("create_midi_clip", {"track": "Lead", "start_beat": 8, "length_beats": 4, "name": "B"}, True),
+        ("update_midi_clip", {"clip": "B", "start_beat": 5}, False),  # overlaps H2? 5..9 vs 4..6
+        ("delete_clip", {"clip": "B"}, True),
+    ],
+    "devices": [
+        ("create_track", {"name": "Lead", "kind": "midi"}, True),
+        ("list_devices", {"query": "synth"}, True),
+        ("insert_device", {"track": "Lead", "device": "simple_synth"}, True),
+        ("insert_device", {"track": "Lead", "device": "eq"}, True),
+        ("get_device_params", {"track": "Lead", "device": "simple_synth"}, True),
+        ("set_device_param", {"track": "Lead", "device": "simple_synth", "param": "waveform", "display_value": "sine"}, True),
+        ("set_device_param", {"track": "Lead", "device": "simple_synth", "param": "cutoff", "display_value": 1000}, True),
+        ("set_device_param", {"track": "Lead", "device": "eq", "param": "mid_gain", "value": 0.7}, True),
+        ("set_device_param", {"track": "Lead", "device": "eq", "param": "mid_gain", "display_value": 99}, False),
+        ("delete_device", {"track": "Lead", "device": "eq"}, True),
+        ("get_session", {"track": "Lead"}, True),
+    ],
+}
+
+
+def _settable(device_map: DeviceMap, device: str, param: str) -> bool:
+    entry = device_map.devices.get(device)
+    return entry is not None and entry.params.get(param) is not None
+
+
+def scenario_tools() -> frozenset[str]:
+    """Tools that ``TOOL_SCENARIOS`` call successfully."""
+    return frozenset(t for steps in TOOL_SCENARIOS.values() for t, _, ok in steps if ok)
+
+
+def assert_tool_scenarios(
+    make_driver: Callable[[], Any],
+    *,
+    device_map: DeviceMap | None = None,
+    lossless: bool = True,
+) -> int:
+    """Run every scenario through ``MirrorBackend(make_driver())`` next to the simulator: each
+    call must give the expected ``ok`` and, for lossless drivers, end in the simulator's state.
+    Covers tools no task oracle uses. Returns the number of scenarios."""
+    failures: list[str] = []
+    for name, steps in TOOL_SCENARIOS.items():
+        mirror = MirrorBackend(make_driver(), device_map, allow_destructive_load=True)
+        ref = SimBackend(Session())
+        for i, (tool, args, ok) in enumerate(steps):
+            if tool == "set_device_param" and (
+                device_map and not _settable(device_map, args["device"], args["param"])
+            ):
+                continue  # this DAW cannot set that parameter
+            got, want = mirror.call(tool, args), ref.call(tool, args)
+            if want.get("ok") != ok or got.get("ok") != ok:
+                failures.append(f"{name}[{i}] {tool}: expected ok={ok}, mirror {got}, sim {want}")
+                break
+        else:
+            if lossless and not same_session(mirror.session, ref.session):
+                failures.append(f"{name}: final state differs from the simulator")
+        mirror.close()
+    assert not failures, "\n".join(failures)
+    return len(TOOL_SCENARIOS)
+
+
 def assert_driver_conformance(
     make_driver: Callable[[], Any],
     tasks: list[Task],

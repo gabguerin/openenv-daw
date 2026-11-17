@@ -79,16 +79,16 @@ code. To start a deployed Space image locally: `DawEnv.from_env("<user>/openenv-
 
 ## What the agent can do
 
-15 portable tools plus `submit`. Every result is JSON, and errors are typed (`not_found`,
+17 portable tools plus `submit`. Every result is JSON, and errors are typed (`not_found`,
 `invalid_args`, `conflict`, `unsupported`, `execution_error`).
 
 | Area | Tools |
 |---|---|
 | Project | `get_session`, `set_transport` |
-| Tracks and clips | `create_track`, `delete_track`, `rename_track`, `create_midi_clip`, `delete_clip` |
+| Tracks and clips | `create_track`, `delete_track`, `rename_track`, `create_midi_clip`, `update_midi_clip`, `delete_clip` |
 | Notes | `insert_midi_notes`, `remove_midi_notes` |
 | Mixing | `set_mixer_channel`, `set_send` |
-| Sounds and effects | `list_devices`, `insert_device`, `get_device_params`, `set_device_param` |
+| Sounds and effects | `list_devices`, `insert_device`, `delete_device`, `get_device_params`, `set_device_param` |
 | Finish | `submit` (`done`, or `blocked` when the request is impossible) |
 
 Tasks come in families, from simple to compositional:
