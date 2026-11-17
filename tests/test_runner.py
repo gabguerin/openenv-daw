@@ -1,66 +1,79 @@
 import json
 
-from openenv_daw.runner.rollout import InProcessAdapter, run_episode, select_tasks
+from openenv.core.harness import ModelStepResult
+from openenv.core.llm_client import LLMResponse, ToolCall
+
+from openenv_daw.harness import (
+    DawSessionFactory,
+    collect,
+    flat,
+    read_results,
+    scripted_model_step,
+    select_tasks,
+)
 from openenv_daw.runner.sft_export import export_sft
-from openenv_daw.tasks.model import Task
 from openenv_daw.tasks.store import default_store
+from openenv_daw.tools import load_instructions
 
 
-class OraclePolicy:
-    """Fake LLM: replays a task's oracle as tool calls, one per assistant message."""
-
-    name = "oracle"
-
-    def __init__(self, tasks: dict[str, Task], break_at: int | None = None):
-        self.tasks, self.break_at = tasks, break_at
-        self.i = 0
-        self.task: Task | None = None
-
-    async def complete(self, messages, tools):
-        intent = messages[1]["content"]
-        if self.task is None or self.task.intent != intent or len(messages) == 2:
-            self.task = next(t for t in self.tasks.values() if t.intent == intent)
-            self.i = 0
-        if self.i >= len(self.task.oracle):
-            return {"role": "assistant", "content": "done"}
-        st = self.task.oracle[self.i]
-        args = dict(st.args)
-        if self.break_at is not None and self.i == self.break_at:
-            args = {"bogus": 1}
-        self.i += 1
-        return {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-                {
-                    "id": f"call_{self.i}",
-                    "type": "function",
-                    "function": {"name": st.tool, "arguments": json.dumps(args)},
-                }
-            ],
-        }
+def broken(messages, tools, sampling):
+    """First call is bogus, then the model stops."""
+    if any(m["role"] == "tool" for m in messages):
+        return ModelStepResult(LLMResponse("done"))
+    return ModelStepResult(LLMResponse("", [ToolCall("c", "create_track", {"bogus": 1})]))
 
 
-async def test_episode_record_and_export(tmp_path):
-    tasks = {t.task_id: t for t in select_tasks("train", 4)}
-    env = InProcessAdapter()
-    recs = [await run_episode(OraclePolicy(tasks), env, tid) for tid in tasks]
-    recs.append(await run_episode(OraclePolicy(tasks), env, next(iter(tasks))))  # duplicate
-    # a failing episode: first oracle call replaced by a bogus one
-    first = next(iter(tasks))
-    recs.append(await run_episode(OraclePolicy(tasks, break_at=0), env, first))
-    for r in recs[:4]:
-        assert r["success"] and r["reward"] == 1.0 and r["done"]
+def test_collect_record_resume_and_export(tmp_path):
+    tasks = select_tasks("train", 4)
+    factory = DawSessionFactory()
+    oracle = scripted_model_step("oracle", tasks)
+    recs = collect(factory, oracle, tasks, tmp_path / "ok")
+    assert len(recs) == 4
+    for r in recs:
+        assert r["reward"] == 1.0 and r["done"] and r["verify_metrics"]["success"]
         roles = [m["role"] for m in r["messages"]]
         assert roles[:2] == ["system", "user"] and "tool" in roles
-        assert r["tools"][0]["type"] == "function" and r["step_log"]
-    assert not recs[-1]["success"]
-    src = tmp_path / "r.jsonl"
-    src.write_text("\n".join(json.dumps(r) for r in recs) + "\n")
-    stats = export_sft(src, tmp_path / "sft.jsonl")
-    assert stats == {"episodes": 6, "kept": 4, "dropped": 2, "nudged": 0, "unmusical": 0}
+        assert r["verify_metrics"]["step_log"] and r["task"] == flat(r)["task_id"]
+    # resume skips collected episodes; a duplicate sample and a failing episode are added
+    assert collect(factory, oracle, tasks, tmp_path / "ok") == []
+    collect(factory, oracle, tasks[:1], tmp_path / "dup", prefix="dup")
+    collect(factory, broken, tasks[:1], tmp_path / "bad", prefix="bad")
+    assert not read_results(tmp_path / "bad")[0]["verify_metrics"]["success"]
+    assert (tmp_path / "ok" / "metadata.json").is_file()
+    stats = export_sft(
+        [tmp_path / "ok", tmp_path / "dup", tmp_path / "bad"], tmp_path / "sft.jsonl"
+    )
+    assert stats == {"episodes": 6, "kept": 4, "dropped": 2, "unmusical": 0}
     rows = [json.loads(line) for line in (tmp_path / "sft.jsonl").read_text().splitlines()]
-    assert set(rows[0]) == {"messages", "tools"}
+    assert set(rows[0]) == {"messages", "tools", "reward", "task_id"}
+    assert rows[0]["reward"] == 1.0 and json.loads(rows[0]["tools"])[0]["type"] == "function"
+
+
+def test_export_drops_unmusical(tmp_path):
+    d = tmp_path / "r"
+    d.mkdir()
+    base = {"messages": [], "reward": 1.0, "extra": {}}
+    rows = [
+        {
+            **base,
+            "task": "a",
+            "verify_metrics": {"success": True, "actions": [], "musicality": 0.9},
+        },
+        {
+            **base,
+            "task": "c",
+            "verify_metrics": {"success": True, "actions": [], "musicality": 0.3},
+        },
+        {
+            **base,
+            "task": "d",
+            "verify_metrics": {"success": True, "actions": [], "musicality": None},
+        },
+        {**base, "task": "e", "verify_metrics": {"success": False, "actions": []}},
+    ]
+    (d / "results.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
+    stats = export_sft(d, tmp_path / "sft.jsonl")
+    assert stats["kept"] == 2 and stats["unmusical"] == 1
 
 
 def test_select_tasks_heldout_and_family():
@@ -69,10 +82,12 @@ def test_select_tasks_heldout_and_family():
     assert select_tasks("train", 3)[0].task_id == default_store().sample("train", 0).task_id
 
 
-async def test_instructions_follow_server_profile():
-    from openenv_daw.tools import load_instructions
-
-    tasks = {t.task_id: t for t in select_tasks("train", 1)}
-    env = InProcessAdapter(profile="mixer_only")
-    rec = await run_episode(OraclePolicy(tasks), env, next(iter(tasks)))
-    assert rec["messages"][0]["content"] == load_instructions("mixer_only")
+def test_instructions_follow_server_profile(tmp_path):
+    tasks = select_tasks("train", 1)
+    recs = collect(
+        DawSessionFactory(profile="mixer_only"),
+        scripted_model_step("oracle", tasks),
+        tasks,
+        tmp_path,
+    )
+    assert recs[0]["messages"][0]["content"] == load_instructions("mixer_only")

@@ -3,6 +3,20 @@
 Contract versions (`openenv_daw.versions`) change whenever the tools, the Session schema or the
 instructions change. The `openenv_daw.adapters` API is provisional until a second driver exists.
 
+## 0.4.0
+
+Breaking: the bespoke runner is replaced by OpenEnv's harness.
+
+- `openenv_daw.harness`: `DawSessionFactory` / `DawSession` (a `ResourceSession`), `collect`
+  (threaded `MCPHarnessAdapter` rollouts into `RolloutSerializer`'s `results.jsonl`, resumable,
+  Hub-pushable), `teacher_client` (OpenAI, Anthropic or any OpenAI-compatible endpoint) and
+  `scripted_model_step` (oracle, noop, submit_only, blocked, random).
+- Removed `runner.client` (`Policy`, `OpenAIPolicy`) and `runner.rollout` (adapters, nudging loop,
+  `run_many`). CLI: `runner collect|export|eval`, flags follow `openenv collect`.
+- `export_sft` reads collect dirs and writes `{messages, tools (JSON string), reward, task_id}`.
+- `build_dataset_for` is `build_dataset(task_ids=...)`; `examples/sft_warmup.py` added;
+  `examples/grpo_train.py` disables Qwen3 thinking.
+
 ## 0.3.0
 
 Breaking: rewards change for train and heldout tasks (stricter checks, musicality blend).

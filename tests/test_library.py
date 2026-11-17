@@ -222,17 +222,17 @@ def test_uncatalogued_plugins_stay_blocked_in_every_profile():
         assert resolve_for_profile(t, "portable_plugins").expected_status == "blocked"
 
 
-async def test_dual_eval_scores_the_same_tasks_under_both_profiles(tmp_path):
+def test_dual_eval_scores_the_same_tasks_under_both_profiles(tmp_path):
     from openenv_daw.runner.report import evaluate_dual, load_task_set
 
     tasks = load_task_set("heldout")
-    rep = await evaluate_dual("oracle", tasks, tmp_path)
+    rep = evaluate_dual("oracle", tasks, tmp_path)
     assert rep["profile"] == "portable" and rep["success"] == len(tasks)
     info = rep["informational"]["portable_plugins"]
     assert info["profile"] == "portable_plugins" and info["success"] == len(tasks)
     # plugin tasks are loadable only in the second report
     assert info["by_expected_status"]["done"]["success"] > rep["by_expected_status"]["done"]["success"]
-    assert (tmp_path / "portable_plugins" / "rollouts.jsonl").is_file()
+    assert (tmp_path / "portable_plugins" / "results.jsonl").is_file()
 
 
 def test_device_map_merge_and_profile_for():

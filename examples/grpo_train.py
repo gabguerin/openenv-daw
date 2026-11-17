@@ -3,6 +3,9 @@
     uv sync --extra trl
     uv run python examples/grpo_train.py --model Qwen/Qwen3-1.7B
 
+Warm start (recommended): collect with a teacher, export, run ``examples/sft_warmup.py``, then
+pass the SFT checkpoint as ``--model`` so ``reward_std`` is non-zero from the first batch.
+
 Reward comes from DawToolEnv.get_reward (the episode score). Evaluate on the heldout split.
 """
 
@@ -28,6 +31,7 @@ def main() -> None:
         max_completion_length=2048,
         learning_rate=1e-6,
         beta=0.0,
+        chat_template_kwargs={"enable_thinking": False},  # answer with tool calls directly
         logging_steps=1,
         eval_strategy="steps",
         eval_steps=50,

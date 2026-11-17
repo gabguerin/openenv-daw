@@ -193,41 +193,28 @@ def build_dataset(
     store: TaskStore | None = None,
     profile: str = DEFAULT_PROFILE,
     stratified: bool = False,
+    task_ids: list[str] | None = None,
 ) -> list[dict]:
     """Rows for ``train_dataset``: a conversational ``prompt`` plus the ``task_id`` that ``reset``
     receives. Works with ``datasets.Dataset.from_list``. With ``stratified`` the heldout rows are
-    interleaved across families, so any prefix of ``n`` rows covers every family."""
+    interleaved across families, so any prefix of ``n`` rows covers every family. ``task_ids``
+    selects specific tasks instead (for example those a model solves only some of the time)."""
     store = store or default_store()
     instructions = load_instructions(profile)
-    order = _stratified_order(store.heldout) if stratified and split == "heldout" else None
-    rows = []
-    for i in range(n):
-        task = store.get_task(split, order[i % len(order)] if order else i, profile)
-        rows.append(
-            {
-                "prompt": [
-                    {"role": "system", "content": instructions},
-                    {"role": "user", "content": task.intent},
-                ],
-                "task_id": task.task_id,
-            }
-        )
-    return rows
-
-
-def build_dataset_for(
-    task_ids: list[str], store: TaskStore | None = None, profile: str = DEFAULT_PROFILE
-) -> list[dict]:
-    """Rows for specific task ids (for example the tasks a model solves only some of the time)."""
-    store = store or default_store()
-    instructions = load_instructions(profile)
+    if task_ids is not None:
+        tasks = [store.get(i, profile) for i in task_ids]
+    else:
+        order = _stratified_order(store.heldout) if stratified and split == "heldout" else None
+        tasks = [
+            store.get_task(split, order[i % len(order)] if order else i, profile) for i in range(n)
+        ]
     return [
         {
             "prompt": [
                 {"role": "system", "content": instructions},
-                {"role": "user", "content": store.get(i, profile).intent},
+                {"role": "user", "content": t.intent},
             ],
-            "task_id": i,
+            "task_id": t.task_id,
         }
-        for i in task_ids
+        for t in tasks
     ]

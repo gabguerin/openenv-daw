@@ -67,8 +67,8 @@ from openenv_daw.env.client import DawEnv
 
 with DawEnv(base_url="http://localhost:8000").sync() as env:
     r = env.reset(split="train", seed=3)
-    print(r.observation.intent)              # the request, as plain text
-    env.call("get_session")                  # the agent must look at the project first
+    print(r.observation.intent)  # the request, as plain text
+    env.call("get_session")  # the agent must look at the project first
     env.call("create_track", name="Lead", kind="midi")
     r = env.call("submit", status="done")
     print(r.reward, r.observation.metadata["success"])
@@ -129,24 +129,32 @@ uv run python -m openenv_daw.runner eval --tasks heldout --policy noop     # flo
 uv run python -m openenv_daw.runner eval --tasks heldout --policy openai --samples 4 --out outputs/m
 ```
 
-`eval` writes `rollouts.jsonl`, `report.json` and `report.md`: success with a 95% interval, mean
+`eval` writes `results.jsonl`, `report.json` and `report.md`: success with a 95% interval, mean
 reward and musicality, pass@k, breakdowns by family and tag, and calls against oracle length.
 
-**Collect rollouts and SFT data** from any OpenAI-compatible endpoint:
+**Collect rollouts, SFT, then GRPO** (the OpenEnv
+[Collect Rollouts for SFT](https://huggingface.co/docs/openenv/tutorials/sft-warmup) pipeline):
 
 ```bash
-uv sync --extra runner
-export OPENAI_BASE_URL=... OPENAI_API_KEY=... OPENENV_DAW_MODEL=...
-uv run python -m openenv_daw.runner rollout --split train --n 100 --out rollouts.jsonl
-uv run python -m openenv_daw.runner export rollouts.jsonl --out sft.jsonl
+uv sync --extra runner --extra trl
+export OPENAI_API_KEY=...
+# 1. teacher rollouts: results.jsonl + metadata.json, resumable, optionally pushed to the Hub
+uv run python -m openenv_daw.runner collect --provider openai --model gpt-5-mini -n 300 \
+    -o rollouts [--push-to-hub <you>/daw-rollouts]
+#    self-hosted teacher: --llm-endpoint http://localhost:8000 --model Qwen/Qwen3-8B
+# 2. filter by the environment's verdict into chat rows {messages, tools, reward, task_id}
+uv run python -m openenv_daw.runner export rollouts -o sft.jsonl
+# 3. SFT warm-up (format compliance), then GRPO from the checkpoint
+uv run python examples/sft_warmup.py --data sft.jsonl --model Qwen/Qwen3-1.7B
+uv run python examples/grpo_train.py --model runs/daw-sft
 ```
 
-`export` keeps successful, musical episodes without nudges, deduplicated by task and action
-sequence, as `{"messages", "tools"}` rows for chat-format SFT.
-
-**Train with TRL.** `openenv_daw.trl_env.DawToolEnv` is a TRL `environment_factory` class built
-from the same tool registry. It calls the simulator in-process, so it runs at simulator speed. See
-`examples/grpo_train.py`.
+`openenv collect` itself only knows `openspiel` and `reasoning_gym`; `openenv_daw.harness` is this
+environment's session factory (`DawSessionFactory`) on the same OpenEnv harness. `export` keeps
+successful, musical episodes (musicality of at least 0.6), deduplicated by task and action sequence.
+`DawToolEnv` is a TRL `environment_factory` class built from the same tool registry (reward from
+`get_reward`), and tool schemas and tool results match the collected data. It runs the simulator
+in-process, so it trains at simulator speed.
 
 | Path | steps/s (Apple M-series) |
 |---|---|

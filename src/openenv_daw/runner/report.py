@@ -1,20 +1,21 @@
 """Evaluation: run a policy over tasks, aggregate into a report (success with a Wilson interval,
 breakdowns, status confusion matrix, pass@k) and gate on a pass fraction.
 
-Built-in policies give the floors and the ceiling: ``oracle`` (replays the oracle), ``noop``
-(never calls a tool), ``submit_only`` (submits ``done`` without touching anything),
-``blocked`` (always refuses) and ``random``."""
+Built-in policies (``harness.scripted_model_step``) give the floors and the ceiling: ``oracle``,
+``noop``, ``submit_only``, ``blocked`` and ``random``."""
 
 from __future__ import annotations
 
 import json
 import math
-import random
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from openenv.core.harness import ModelStep
+
+from openenv_daw.backends import Backend
 from openenv_daw.sim.profiles import DEFAULT_PROFILE
 from openenv_daw.tasks.model import Task
 
@@ -168,62 +169,6 @@ def report_markdown(rep: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-# --- built-in policies --------------------------------------------------------------------------
-
-
-class ScriptedPolicy:
-    """Oracle ceiling and degenerate floors, as chat policies."""
-
-    def __init__(self, kind: str, tasks: list[Task], seed: int = 0) -> None:
-        if kind not in ("oracle", "noop", "submit_only", "blocked", "random"):
-            raise ValueError(f"unknown policy {kind!r}")
-        self.name, self.kind = kind, kind
-        self.by_intent = {t.intent: t for t in tasks}
-        self.rng = random.Random(seed)
-
-    @staticmethod
-    def _msg(name: str, args: dict[str, Any], i: int) -> dict[str, Any]:
-        return {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-                {
-                    "id": f"call_{i}",
-                    "type": "function",
-                    "function": {"name": name, "arguments": json.dumps(args)},
-                }
-            ],
-        }
-
-    async def complete(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
-    ) -> dict[str, Any]:
-        done = sum(m["role"] == "tool" for m in messages)
-        if self.kind == "noop":
-            return {"role": "assistant", "content": "I will not do anything."}
-        if self.kind == "submit_only":
-            if done:
-                return {"role": "assistant", "content": "done"}
-            return self._msg("submit", {"status": "done"}, done)
-        if self.kind == "blocked":
-            return self._msg("submit", {"status": "blocked", "reason": "not possible"}, done)
-        if self.kind == "oracle":
-            steps = self.by_intent[messages[1]["content"]].oracle
-            if done >= len(steps):
-                return {"role": "assistant", "content": "done"}
-            return self._msg(steps[done].tool, steps[done].args, done)
-        pool: list[tuple[str, dict[str, Any]]] = [
-            ("get_session", {}),
-            ("list_devices", {}),
-            ("create_track", {"name": f"T{self.rng.randrange(99)}", "kind": "midi"}),
-            ("set_transport", {"tempo_bpm": float(self.rng.randrange(60, 180))}),
-        ]
-        if done >= 3:
-            return self._msg("submit", {"status": self.rng.choice(["done", "blocked"])}, done)
-        name, args = self.rng.choice(pool)
-        return self._msg(name, args, done)
-
-
 def load_task_set(spec: str) -> list[Task]:
     """``heldout`` (the default heldout), or the path of a JSONL file."""
     from openenv_daw.tasks.store import default_store, load_tasks
@@ -231,41 +176,51 @@ def load_task_set(spec: str) -> list[Task]:
     return list(default_store().heldout) if spec == "heldout" else load_tasks(spec)
 
 
-async def evaluate(
+def evaluate(
     policy_name: str,
     tasks: list[Task],
     out_dir: Path,
     samples: int = 1,
-    concurrency: int = 4,
+    workers: int = 4,
     url: str | None = None,
-    make_policy: Callable[[], Any] | None = None,
+    model_step: ModelStep | None = None,
     profile: str = DEFAULT_PROFILE,
+    model: str | None = None,
+    backend_factory: Callable[[str], Backend] | None = None,
 ) -> dict[str, Any]:
     """Run ``policy_name`` on ``tasks`` (stored in their profile-neutral form) as served by
-    ``profile`` and write ``rollouts.jsonl``, ``report.json`` and ``report.md`` into ``out_dir``.
+    ``profile`` and write ``results.jsonl``, ``report.json`` and ``report.md`` into ``out_dir``.
     Returns the report."""
+    from openenv_daw.harness import (
+        DawSessionFactory,
+        collect,
+        flat,
+        scripted_model_step,
+        teacher_model_step,
+    )
     from openenv_daw.tasks.resolve import resolve_for_profile
     from openenv_daw.tasks.store import TaskStore
 
-    from .rollout import InProcessAdapter, WebSocketAdapter, run_many
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    rollouts = out_dir / "rollouts.jsonl"
-    rollouts.write_text("")
-    if make_policy is None:
-        tasks_for_policy = [resolve_for_profile(t, profile) for t in tasks]
+    resolved = [resolve_for_profile(t, profile) for t in tasks]
+    if model_step is None:
         if policy_name == "openai":
-            from .client import OpenAIPolicy
-
-            make_policy = lambda: OpenAIPolicy(temperature=0.0)  # noqa: E731
+            model_step = teacher_model_step(model=model, temperature=0.0)
         else:
-            make_policy = lambda: ScriptedPolicy(policy_name, tasks_for_policy)  # noqa: E731
-    store = TaskStore(tasks)
-    make_env = (
-        (lambda: WebSocketAdapter(url)) if url else (lambda: InProcessAdapter(store, profile))
+            model_step = scripted_model_step(policy_name, resolved)
+    factory = DawSessionFactory(
+        TaskStore(tasks), profile, backend_factory=backend_factory, base_url=url
     )
-    records = await run_many(make_policy, make_env, tasks, samples, concurrency, rollouts)
-    rep = build_report(records, [resolve_for_profile(t, profile) for t in tasks], policy_name)
+    records = collect(
+        factory,
+        model_step,
+        tasks,
+        out_dir,
+        samples=samples,
+        workers=workers,
+        resume=False,
+        metadata={"policy": policy_name},
+    )
+    rep = build_report([flat(r) for r in records], resolved, policy_name)
     rep["profile"] = profile
     (out_dir / "report.json").write_text(json.dumps(rep, indent=2))
     (out_dir / "report.md").write_text(report_markdown(rep))
@@ -275,29 +230,31 @@ async def evaluate(
 DUAL_PROFILES = ("portable", "portable_plugins")
 
 
-async def evaluate_dual(
+def evaluate_dual(
     policy_name: str,
     tasks: list[Task],
     out_dir: Path,
     samples: int = 1,
-    concurrency: int = 4,
+    workers: int = 4,
     url: str | None = None,
-    make_policy: Callable[[], Any] | None = None,
+    model_step: ModelStep | None = None,
+    model: str | None = None,
 ) -> dict[str, Any]:
     """The same stored tasks scored under ``portable`` (the headline: every DAW can do it) and
     ``portable_plugins`` (informational: a DAW that also loads third-party plugins). Each profile
     writes its own report into ``out_dir/<profile>``; the combined ``report.json`` is the headline
     report plus an ``informational`` entry."""
     reps = {
-        p: await evaluate(
+        p: evaluate(
             policy_name,
             tasks,
             out_dir / p,
             samples,
-            concurrency,
+            workers,
             url,
-            make_policy,
+            model_step,
             profile=p,
+            model=model,
         )
         for p in DUAL_PROFILES
     }

@@ -1,7 +1,6 @@
-import json
-
 import pytest
 
+from openenv_daw.harness import flat, read_results
 from openenv_daw.runner.report import (
     build_report,
     evaluate,
@@ -23,20 +22,18 @@ def test_wilson_and_passk():
     assert pass_at_k(4, 4, 2) == 1.0
 
 
-async def test_oracle_ceiling_and_floors(tmp_path):
+def test_oracle_ceiling_and_floors(tmp_path):
     tasks = load_task_set("heldout")
-    oracle = await evaluate("oracle", tasks, tmp_path / "o")
+    oracle = evaluate("oracle", tasks, tmp_path / "o")
     assert oracle["success"] == len(tasks) and oracle["mean_reward"] == 1.0
     assert (tmp_path / "o" / "report.md").read_text().startswith("# Evaluation")
     floor = 0.1  # openenv.yaml validation.reward.floor_margin
     for name in ("noop", "submit_only", "blocked"):
-        rep = await evaluate(name, tasks, tmp_path / name)
+        rep = evaluate(name, tasks, tmp_path / name)
         feasible = [
             t.task_id for t in tasks if resolve_for_profile(t, "portable").expected_status == "done"
         ]
-        recs = [
-            json.loads(x) for x in (tmp_path / name / "rollouts.jsonl").read_text().splitlines()
-        ]
+        recs = [flat(r) for r in read_results(tmp_path / name)]
         got = [r["reward"] for r in recs if r["task_id"] in feasible]
         assert max(got) <= floor, name
         assert rep["success_rate"] <= 0.2

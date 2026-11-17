@@ -6,12 +6,9 @@ from fastapi.testclient import TestClient
 
 from openenv_daw.env import DawEnvironment
 from openenv_daw.rewards.rubrics import score_episode
-from openenv_daw.runner.rollout import InProcessAdapter, iter_episode
 from openenv_daw.schema import Session
 from openenv_daw.server.ui import render
 from openenv_daw.tasks.generators import families, generate
-
-from .test_runner import OraclePolicy
 
 
 @pytest.mark.parametrize("family", list(families()))
@@ -61,15 +58,6 @@ def test_studio_builds_with_independent_sessions():
     a.env.reset(task_id="melody_in_key-train-0")
     b.env.reset(task_id="reverb_send-train-0")
     assert a.env.episode.task.task_id != b.env.episode.task.task_id
-
-
-async def test_iter_episode_events():
-    from openenv_daw.runner.rollout import select_tasks
-
-    tasks = {t.task_id: t for t in select_tasks("train", 1)}
-    tid = next(iter(tasks))
-    kinds = [e["type"] async for e in iter_episode(OraclePolicy(tasks), InProcessAdapter(), tid)]
-    assert kinds[0] == "start" and kinds[-1] == "end" and "call" in kinds
 
 
 def test_web_root_serves_with_interface(monkeypatch):
