@@ -150,6 +150,7 @@ def test_deleting_foreign_track_is_allowed_but_scored_as_damage():
     assert ep.backend.call("delete_track", {"track": "Legacy Bus"})["ok"]
     ep.run("submit", {"status": "done"})
     assert any("Legacy Bus" in d for d in ep.score.damage) and not ep.score.success
+    assert ep.score.reward == 0.0
 
 
 def test_all_oracles_pass_including_foreign():

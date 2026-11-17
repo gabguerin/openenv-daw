@@ -1,0 +1,35 @@
+{
+  "description": "Train and evaluate AI agents that operate a digital audio workstation (DAW) for music production. A fast, deterministic JSON DAW simulator behind a portable MCP tool set: create tracks and MIDI clips, write melodies, chord progressions and drum beats, edit notes, set mixer levels and sends, load devices and presets, and refuse infeasible requests. Verifiable rewards from declarative state checks, with an oracle solution for every task. Tools map to Ableton Live, REAPER, Bitwig and Ardour adapters.",
+  "tags": ["openenv", "music", "daw", "midi", "tool-use", "mcp", "agent", "rl", "ableton"],
+  "representative_queries": [
+    "find an environment for training an agent to use a digital audio workstation",
+    "find an MCP tool-use environment for music production",
+    "find an environment where an agent writes MIDI melodies, chords and drum beats",
+    "find an environment that tests refusing infeasible requests"
+  ],
+  "license": "Apache-2.0",
+  "license_source": "packages/openenv-daw/LICENSE",
+  "artifact_availability": "resolvable",
+  "agent_tools": {
+    "protocol": "mcp",
+    "names": [
+      "get_session",
+      "set_transport",
+      "create_track",
+      "delete_track",
+      "rename_track",
+      "create_midi_clip",
+      "delete_clip",
+      "insert_midi_notes",
+      "remove_midi_notes",
+      "set_mixer_channel",
+      "set_send",
+      "list_devices",
+      "insert_device",
+      "get_device_params",
+      "set_device_param",
+      "submit"
+    ],
+    "source": "packages/openenv-daw/src/openenv_daw/tools/registry.py"
+  }
+}

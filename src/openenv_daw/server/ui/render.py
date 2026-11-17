@@ -131,7 +131,7 @@ def checks_html(
         for c, ok in zip(task.checks, results, strict=True)
     )
     s = final or score_episode(task, initial, current, None, errors, False).as_dict()
-    dmg = "".join(f"<li>{_e(d)}</li>" for d in s["damage"])
+    dmg = "".join(f"<li>{_e(d)}</li>" for d in [*s["damage"], *s["extraneous"]])
     if final:
         summary = (
             f"<p><b>Episode over</b>: reward <b>{final['reward']:.3f}</b>, "
@@ -455,7 +455,7 @@ def dark_checks_html(
         for i, (c, ok) in enumerate(zip(task.checks, results, strict=True))
     )
     s = final or score_episode(task, initial, current, None, errors, False).as_dict()
-    dmg = "".join(f"<li class=ds-bad>{_e(d)}</li>" for d in s["damage"])
+    dmg = "".join(f"<li class=ds-bad>{_e(d)}</li>" for d in [*s["damage"], *s["extraneous"]])
     return (
         f'<div class="ds-card"><h4>Checks · {sum(results)}/{len(results)}</h4><ul>{items}</ul></div>'
         + (f'<div class="ds-card"><h4>Damage</h4><ul>{dmg}</ul></div>' if dmg else "")

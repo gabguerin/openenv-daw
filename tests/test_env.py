@@ -88,7 +88,7 @@ def test_blocked_task_and_wrong_status():
     assert last.reward == 0.0  # critical state_unchanged failed
 
 
-def test_damage_penalty():
+def test_damage_is_a_hard_gate():
     t = generate("reverb_send", 0)
     env = DawEnvironment()
     env.reset(task_id=t.task_id)
@@ -99,7 +99,7 @@ def test_damage_penalty():
     )
     call(env, "set_mixer_channel", track=other.id, volume_db=-20)
     last = call(env, "submit", status="done")
-    assert 0.8 < last.reward < 1.0 and not last.metadata["success"]
+    assert last.reward == 0.0 and not last.metadata["success"]
     assert last.metadata["score"]["damage"]
 
 

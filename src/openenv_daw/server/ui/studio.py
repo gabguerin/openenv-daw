@@ -96,9 +96,10 @@ def _views(sess: Session | None) -> tuple[Any, ...]:
     prev = SessionModel.restore(sess.snapshots[k - 1]) if k > 0 else None
     final = ep.score.as_dict() if ep.score else None
     shown_final = final if vs is None else None
-    damage = (final or {}).get("damage") if vs is None and final else None
+    damage = [*final["damage"], *final["extraneous"]] if vs is None and final else None
     if damage is None:
-        damage = score_episode(ep.task, ep.initial, cur, None, ep.error_count, False).damage
+        sc = score_episode(ep.task, ep.initial, cur, None, ep.error_count, False)
+        damage = [*sc.damage, *sc.extraneous]
     subtitle = f"step {ep.step_count}/{ep.max_steps} · {'done' if ep.done else 'running'}"
     if vs is not None:
         subtitle += f" · viewing step {vs}"

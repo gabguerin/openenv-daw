@@ -3,6 +3,23 @@
 Contract versions (`openenv_daw.versions`) change whenever the tools, the Session schema or the
 instructions change. The `openenv_daw.adapters` API is provisional until a second driver exists.
 
+## 0.4.0
+
+Breaking: rewards change when a task damages existing objects.
+
+- `DawRubric` is now a real rubric tree (`status`, `safety`, `critical` gates and a `quality`
+  blend) that computes the reward. The server (`obs.reward`), the TRL wrapper and the web UI all
+  use it, so they agree; `named_rubrics()` shows every component's `last_score`. Fixes shaped mode,
+  where the server returned 0.0 but the score said 0.1 x critical fraction.
+- Changing an object the task did not declare touchable is a hard gate (reward 0), not a 0.15
+  subtraction. Extra objects and tool errors are multipliers on the correctness score
+  (`1 - min(0.5, 0.15 n)` and `1 - min(0.2, 0.02 n)`), no longer subtracted.
+- `EpisodeScore`: `damage` is now untouchable-object changes only; new `extraneous`,
+  `extraneous_penalty` and `components`; `damage_penalty` removed. `metadata["facts"]` carries the
+  measurements the rubric scores.
+- Discovery: `discovery.json` (tags, representative queries, MCP tools, license) for
+  `openenv catalog build`, with a CI job that builds the catalog and checks the env is found.
+
 ## 0.3.0
 
 Breaking: rewards change for train and heldout tasks (stricter checks, musicality blend).

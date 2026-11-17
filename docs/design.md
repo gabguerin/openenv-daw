@@ -59,15 +59,21 @@ v5 is no longer oracle-valid for chord tasks.
 
 ## Scoring
 
-1. Gate: any failed critical check, or a wrong submit status, scores 0. No `submit` scores 0.
-2. Net score: the fraction of non-critical checks passed, minus damage (changing untouchable
-   objects or adding extraneous ones: new tracks or devices not in `allowed_new`, solo, a new fader
-   above 0 dB; 0.15 each, shared cap 0.5) and 0.02 per tool error (cap 0.2).
-3. Musicality: for musical tasks, `reward = (1 - W) * net + W * min(1, musicality / 0.8)` with
-   W = 0.2 (`OPENENV_DAW_MUSIC_WEIGHT`; 0 disables). It applies only after the gate passes.
-4. `metadata["success"]` is binary and ignores musicality.
+The reward comes from one rubric tree, `DawRubric`, which the server, the TRL wrapper and the UI
+all use. Its parts are inspectable through `env.rubric.named_rubrics()` (`last_score`).
 
-`OPENENV_DAW_REWARD_MODE=shaped` gives a failed critical gate with the right submit status 0.1 times
+1. Gates (any failure scores 0): `status` (the submit status must equal the expected one, no
+   `submit` scores 0), `safety` (changing a pre-existing object the task did not declare touchable,
+   for example a foreign track, is damage) and `critical` (every critical check must pass).
+2. Correctness: the fraction of non-critical checks passed, multiplied by `1 - min(0.5, 0.15 n)`
+   for `n` extra objects (new tracks or devices not in `allowed_new`, solo, a new fader above 0 dB)
+   and by `1 - min(0.2, 0.02 e)` for `e` tool errors.
+3. Musicality: for musical tasks, `reward = (1 - W) * correctness + W * min(1, musicality / 0.8)`
+   with W = 0.2 (`OPENENV_DAW_MUSIC_WEIGHT`; 0 disables).
+4. `metadata["success"]` is binary: gates passed, every check passed, no extra objects. It ignores
+   musicality.
+
+`OPENENV_DAW_REWARD_MODE=shaped` gives failed critical checks (right status, no damage) 0.1 times
 the fraction of critical checks passed. The default `strict` mode scores it 0. Efficiency (`calls`,
 `oracle_len`, `read_first`) is reported on the score, never rewarded.
 

@@ -103,7 +103,7 @@ def test_junk_objects_are_penalized(monkeypatch):
     s = run(t, steps).score
     # the shared damage cap (0.5) bounds the loss, so a perfect fraction still lands at 0.5
     assert s.reward <= 0.5 and not s.success
-    assert len(s.damage) >= 4 and s.damage_penalty == 0.5
+    assert len(s.extraneous) >= 4 and s.extraneous_penalty == 0.5
 
 
 def test_each_extraneous_object_costs_015(monkeypatch):
@@ -114,7 +114,7 @@ def test_each_extraneous_object_costs_015(monkeypatch):
         oracle(t)[-1],
     ]
     s = run(t, steps).score
-    assert s.damage == ["extra track Extra"] and s.reward == pytest.approx(0.85)
+    assert s.extraneous == ["extra track Extra"] and s.reward == pytest.approx(0.85)
     assert not s.success
 
 
@@ -149,7 +149,7 @@ def test_junk_clip_on_new_track_is_penalized():
         oracle(t)[-1],
     ]
     s = run(t, steps).score
-    assert s.damage == [f"extra clip on {_track_of(t)}"] and not s.success and s.reward < 1.0
+    assert s.extraneous == [f"extra clip on {_track_of(t)}"] and not s.success and s.reward < 1.0
 
 
 def _track_of(t: Task) -> str:

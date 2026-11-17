@@ -1,3 +1,3 @@
-from .rubrics import DawRubric, EpisodeScore, score_episode
+from .rubrics import DawRubric, EpisodeFacts, EpisodeScore, measure_episode, score_episode
 
-__all__ = ["DawRubric", "EpisodeScore", "score_episode"]
+__all__ = ["DawRubric", "EpisodeFacts", "EpisodeScore", "measure_episode", "score_episode"]

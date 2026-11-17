@@ -46,7 +46,9 @@ def package_metadata() -> EnvironmentMetadata:
         md = metadata.metadata("openenv-daw")
         version = md["Version"]
         description = md["Summary"] or "DAW tool-use environment"
-        readme = metadata.metadata("openenv-daw").json.get("description") or None  # long description
+        readme = (
+            metadata.metadata("openenv-daw").json.get("description") or None
+        )  # long description
     except metadata.PackageNotFoundError:  # running from a source tree
         version, description, readme = "0.0.0", "DAW tool-use environment", None
     return EnvironmentMetadata(
@@ -142,6 +144,7 @@ class DawEnvironment(MCPEnvironment):
             self.max_consecutive_errors,
             self.backend_factory,
             mask,
+            rubric=self.rubric,
         )
         self._reset_rubric()
         self._state = DawState(

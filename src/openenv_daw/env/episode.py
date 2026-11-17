@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from openenv_daw.backends import Backend, SimBackend
-from openenv_daw.rewards.rubrics import EpisodeScore, score_episode
+from openenv_daw.rewards.rubrics import DawRubric, EpisodeScore, score_episode
 from openenv_daw.schema import Session
 from openenv_daw.sim.profiles import unsupported_params_for
 from openenv_daw.tasks.model import Task
@@ -26,8 +26,10 @@ class Episode:
         backend_factory: Callable[[str], Backend] | None = None,
         masked_params: frozenset[str] = frozenset(),
         reward_mode: str | None = None,
+        rubric: DawRubric | None = None,
     ) -> None:
         self.reward_mode = reward_mode
+        self.rubric = rubric
         self.task = task
         self.masked_params = masked_params
         self.max_steps, self.max_consecutive_errors = max_steps, max_consecutive_errors
@@ -125,6 +127,7 @@ class Episode:
             reward_mode=self.reward_mode,
             calls=len(steps),
             read_first=read_first,
+            rubric=self.rubric,
         )
         self.done, self.termination = True, why
         return why
@@ -133,6 +136,7 @@ class Episode:
         assert self.score is not None
         return {
             "score": self.score.as_dict(),
+            "facts": self.score.facts.as_dict() if self.score.facts else None,
             "success": self.score.success,
             "termination": self.termination,
             "truncated": self.score.truncated,
