@@ -94,7 +94,7 @@ class DawEnvironment(MCPEnvironment):
         else:
             task = self.store.sample(split, seed, family)
         self.episode = Episode(
-            task, self.max_steps, self.max_consecutive_errors, self.backend_factory, self.rubric
+            task, self.max_steps, self.max_consecutive_errors, self.backend_factory
         )
         self._reset_rubric()
         self._state = DawState(

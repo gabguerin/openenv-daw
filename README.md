@@ -108,11 +108,12 @@ Difficulty tags `L1` to `L3`. Train tasks are generated from seeds; the held-out
 
 ## How scoring works
 
-1. **Gate.** Any failed critical check, a wrong submit status, or no `submit` at all scores 0.
-2. **Net score.** The fraction of remaining checks passed, minus penalties for damaging things the
-   task did not touch and for tool errors.
+1. **Gates.** Any failed critical check, a wrong submit status, no `submit` at all, or changing an
+   object the task did not declare touchable scores 0.
+2. **Correctness.** The fraction of remaining checks passed, scaled down for extra objects the task
+   did not ask for (15% each, at most 50%) and for tool errors (2% each, at most 20%).
 3. **Musicality.** For musical tasks, 20% of the reward is a soft musicality score (melody shape,
-   voice leading, rhythm). It counts only after the gate passes and never changes `success`.
+   voice leading, rhythm). It counts only after the gates pass and never changes `success`.
 
 `metadata["success"]` is binary and about correctness only.
 Details: [docs/design.md](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md#scoring).

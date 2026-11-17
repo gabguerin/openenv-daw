@@ -100,7 +100,7 @@ def test_junk_objects_are_penalized(monkeypatch):
         oracle(t)[-1],
     ]
     s = run(t, steps).score
-    # the shared damage cap (0.5) bounds the loss, so a perfect fraction still lands at 0.5
+    # the extraneous multiplier is capped at 0.5, so a perfect fraction still lands at 0.5
     assert s.reward <= 0.5 and not s.success
     assert len(s.extraneous) >= 4 and s.extraneous_penalty == 0.5
 
