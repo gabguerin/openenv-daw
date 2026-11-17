@@ -34,8 +34,12 @@ and reward update.*
 
 ## Try it in 60 seconds
 
+Install the [OpenEnv](https://github.com/openenv/OpenEnv) CLI (`pip install openenv`), then from this
+folder:
+
 ```bash
-docker build -t openenv-daw . && docker run -p 8000:8000 -e ENABLE_WEB_INTERFACE=true openenv-daw
+uv sync --extra server --extra ui     # once
+ENABLE_WEB_INTERFACE=true openenv serve
 ```
 
 Open <http://localhost:8000/web> and use the **DAW Studio** tab:
@@ -45,8 +49,12 @@ Open <http://localhost:8000/web> and use the **DAW Studio** tab:
    reference solution.
 3. Watch the **Checks** and the **reward if you submit now**, then call `submit`.
 
-Without Docker: `uv sync --extra server --extra ui`, then
-`ENABLE_WEB_INTERFACE=true uv run uvicorn openenv_daw.server.app:app --port 8000`.
+`openenv serve` runs on the host. To run in a container instead:
+
+```bash
+openenv build -t openenv-daw
+docker run -p 8000:8000 -e ENABLE_WEB_INTERFACE=true openenv-daw
+```
 
 ## Use it from Python
 
@@ -146,13 +154,23 @@ from the same tool registry. It calls the simulator in-process, so it runs at si
 | Environment, in-process | ~240 |
 | Environment over WebSocket (Docker) | ~270 |
 
-## Deploy
+## Deploy and share
 
-- **Hugging Face Space** (the web UI runs no model, so `cpu-basic` is enough):
-  `openenv push --repo-id <you>/openenv-daw --hardware cpu-basic --exclude .hfexclude`, or the
-  `space-openenv-daw` workflow.
-- **Docker**: `docker build -t openenv-daw .` (built on `openenv-base`, dependencies from `uv.lock`).
-- Check it against the OpenEnv standard: `openenv validate --level runtime`.
+All with the `openenv` CLI:
+
+```bash
+openenv validate --level static --skip-build        # fast manifest check
+openenv validate --level runtime                    # builds the image and runs the contract checks
+openenv validate http://localhost:8000              # probe a running server
+openenv push --repo-id <you>/openenv-daw --hardware cpu-basic --exclude .hfexclude
+openenv fork <owner>/openenv-daw                    # copy a deployed Space to your account
+```
+
+The web UI runs no model, so a `cpu-basic` Space is enough (Docker Spaces on `cpu-basic` need a
+Hugging Face PRO account). The `space-openenv-daw` workflow runs the same `push`. The image is built
+on `openenv-base` with dependencies from `uv.lock`. To use a deployed Space from Python,
+`pip install git+https://huggingface.co/spaces/<owner>/openenv-daw` and
+`DawEnv.from_env("<owner>/openenv-daw")`.
 
 ## Go further
 
