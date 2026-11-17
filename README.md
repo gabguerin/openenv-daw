@@ -12,140 +12,119 @@ tags:
 
 # openenv-daw
 
-An [OpenEnv](https://github.com/openenv/OpenEnv) environment for DAW tool use ("train abstract,
-deploy specific"). A lightweight JSON DAW state simulator sits behind a portable set of MCP tools
-that map onto the scripting APIs of Ableton Live 12, REAPER 7, Bitwig and Ardour. No audio engine
-is needed: the simulator is pure Python and deterministic.
+**Teach an AI agent to use a digital audio workstation.** An [OpenEnv](https://github.com/openenv/OpenEnv)
+environment where an agent gets a plain-language request ("add a 4-bar melody in D minor on a new
+track called Lead") and has to carry it out with DAW tools, then gets scored on the result.
 
-## Design
+![DAW Studio: reset a task, call tools, watch the reward](assets/demo.gif)
 
-- **Tools**: 15 portable tools plus `submit`, declared once as a FastMCP server
-  (`openenv_daw.tools.registry`). Tool results are JSON; mutating tools return the affected
-  object, errors are typed (`not_found`, `invalid_args`, `conflict`, `unsupported`).
-- **Simulator**: linear timeline in beats, dB mixer, return tracks with implicit sends,
-  1/16-beat grid snapping, stable ids, a canonical 7-device catalog
-  (`src/openenv_daw/catalog/devices.yaml`) and capability profiles (`portable` default).
-- **Environment** (`DawEnvironment`, an OpenEnv `MCPEnvironment`): one request per episode.
-  The reset observation is the request text only; the agent must call `get_session`. Episodes end
-  on `submit`, after 30 steps, or after 3 consecutive errors. A verified step log is kept.
-- **Reward**: `submit` is required (no submit scores 0). Any failed critical check (or a wrong
-  submit status) gives 0; otherwise the fraction of remaining checks passed, minus a penalty for
-  changing untouchable objects or adding extraneous ones (new tracks or devices the task did not
-  list in `allowed_new`, solo, a new fader above 0 dB: 0.15 each, shared cap 0.5) and per tool
-  error (0.02 each, cap 0.2). `metadata["success"]` is binary.
-- **Profiles**: `portable` and `mixer_only` map to tools and capability tags. Tasks declare
-  `requires` (tool names plus tags such as `group_tracks`, `automation`, `third_party_plugin`,
-  `render`); `resolve_for_profile(task, profile)` turns a task whose requirements are not covered
-  into a "blocked" one, so the JSONL stays profile-neutral. `TaskStore.sample/get` take a profile.
-- **Sounds and plugins**: the agent never browses a DAW. `list_devices(query="sub bass")` searches
-  a canonical library (`catalog/library.yaml`: synth presets, drum kits, effect presets, racks,
-  plugins) and `insert_device(device=<id>)` loads a hit. Presets load as their catalog device with
-  editable parameters; racks and plugins load read-only. Plugins need the `third_party_plugin`
-  capability (profile `portable_plugins`). Adapters map library ids to the DAW's items in their
-  `DeviceMap` (`library:`); unmapped ids are hidden from the agent.
-- **Foreign objects**: about 20% of tasks start with a read-only group track holding a foreign
-  plugin and audio/session clips; they are readable, any mutation returns `unsupported`, and
-  changing them is scored as damage.
-- **Tasks**: seeded families `session_setup`, `melody_in_key`, `four_on_floor_beat`, `reverb_send`,
-  `mix_balance`, `chord_progression`, `edit_notes`, `device_tweak` (display-value tolerance of 5%),
-  `disambiguation` (duplicate clip names), `load_sound` (named or described presets, racks, plugins), `compositional` (chains of 2-3 families; an infeasible part
-  blocks the whole task), feasible `near_miss` requests that mention infeasible-sounding words, and
-  about 10% infeasible requests (`submit("blocked")`). Tasks carry difficulty tags `L1`-`L3`.
-  Train tasks are generated from seeds; `heldout_v6.jsonl` (212 tasks, ≥15 per family, default; `heldout_v5` is frozen and no longer oracle-valid for chord tasks; `OPENENV_DAW_HELDOUT`
-  selects another file; v2, v3 and v4 are frozen) uses unseen templates, slot values and, for
-  `compositional`, unseen family combinations.
-  Every task carries an oracle solution.
+*The DAW Studio web UI: start a task, call tools by hand or step the oracle, and watch the checks
+and reward update.*
 
-## Run
+## Why use it
+
+- **Train abstract, deploy specific.** The agent learns one portable tool set. Adapters map it to
+  Ableton Live 12, REAPER 7, Bitwig and Ardour.
+- **Fast and deterministic.** A pure-Python simulator, no audio engine, no DAW needed. The same
+  seed gives the same task and the same state hash.
+- **Verifiable rewards.** Every task has checks and an oracle solution that scores 1.0, so a
+  reward bug shows up as a failing test.
+- **Ready for RL and SFT.** A TRL environment, a rollout runner, SFT export and a 212-task
+  held-out benchmark are included.
+
+## Try it in 60 seconds
+
+```bash
+docker build -t openenv-daw . && docker run -p 8000:8000 -e ENABLE_WEB_INTERFACE=true openenv-daw
+```
+
+Open <http://localhost:8000/web> and use the **DAW Studio** tab:
+
+1. Press **Reset** (or **Random task**) to get a request.
+2. Pick a tool, edit its arguments and press **Run**, or press **Step oracle** to watch the
+   reference solution.
+3. Watch the **Checks** and the **reward if you submit now**, then call `submit`.
+
+Without Docker: `uv sync --extra server --extra ui`, then
+`ENABLE_WEB_INTERFACE=true uv run uvicorn openenv_daw.server.app:app --port 8000`.
+
+## Use it from Python
+
+```bash
+pip install openenv-daw
+```
+
+```python
+from openenv_daw.env.client import DawEnv
+
+with DawEnv(base_url="http://localhost:8000").sync() as env:
+    r = env.reset(split="train", seed=3)
+    print(r.observation.intent)              # the request, as plain text
+    env.call("get_session")                  # the agent must look at the project first
+    env.call("create_track", name="Lead", kind="midi")
+    r = env.call("submit", status="done")
+    print(r.reward, r.observation.metadata["success"])
+```
+
+Use `async with DawEnv(...) as env:` and `await env.reset(...)` / `await env.call(...)` in async
+code. To start a deployed Space image locally: `DawEnv.from_env("<user>/openenv-daw")`.
+
+## What the agent can do
+
+15 portable tools plus `submit`. Every result is JSON, and errors are typed (`not_found`,
+`invalid_args`, `conflict`, `unsupported`).
+
+| Area | Tools |
+|---|---|
+| Project | `get_session`, `set_transport` |
+| Tracks and clips | `create_track`, `delete_track`, `rename_track`, `create_midi_clip`, `delete_clip` |
+| Notes | `insert_midi_notes`, `remove_midi_notes` |
+| Mixing | `set_mixer_channel`, `set_send` |
+| Sounds and effects | `list_devices`, `insert_device`, `get_device_params`, `set_device_param` |
+| Finish | `submit` (`done`, or `blocked` when the request is impossible) |
+
+Tasks come in families, from simple to compositional:
+
+| Family | Example request |
+|---|---|
+| `session_setup` | Switch the time signature to 7/8 and set 135 beats per minute. |
+| `mix_balance` | Set Lead to -9 dB, pan Pad hard right, and mute Drums. |
+| `melody_in_key`, `chord_progression`, `four_on_floor_beat` | Musical writing, checked for key, harmony and rhythm. |
+| `edit_notes`, `device_tweak`, `reverb_send`, `load_sound` | Change existing material, tweak a device, add a send, load a described sound. |
+| `disambiguation`, `near_miss` | Duplicate names; requests that only sound impossible. |
+| `compositional` | Chains of 2 to 3 of the above. |
+| `infeasible` | About 10% of tasks: the right answer is `submit("blocked")`. |
+
+Difficulty tags `L1` to `L3`. Train tasks are generated from seeds; the held-out set
+`heldout_v6.jsonl` has 212 tasks with unseen templates and values.
+
+## How scoring works
+
+1. **Gate.** Any failed critical check, a wrong submit status, or no `submit` at all scores 0.
+2. **Net score.** The fraction of remaining checks passed, minus penalties for damaging things the
+   task did not touch and for tool errors.
+3. **Musicality.** For musical tasks, 20% of the reward is a soft musicality score (melody shape,
+   voice leading, rhythm). It counts only after the gate passes and never changes `success`.
+   Set `OPENENV_DAW_MUSIC_WEIGHT=0` to turn it off.
+
+`metadata["success"]` is binary and about correctness only. For training you can use
+`OPENENV_DAW_REWARD_MODE=shaped`, which gives partial credit for passing critical checks.
+Details: [docs/design.md](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md#scoring).
+
+## Evaluate and train
 
 ```bash
 uv sync --all-extras
 uv run pytest
-docker build -t openenv-daw . && docker run -p 8000:8000 openenv-daw
-uv run python scripts/oracle_rollout.py --url http://localhost:8000
-uv run python scripts/benchmark.py --url http://localhost:8000
-```
-
-```python
-from openenv_daw.env.client import DawEnv
-
-async with DawEnv(base_url="http://localhost:8000") as env:
-    r = await env.reset(split="train", seed=3)
-    print(r.observation.intent)
-    r = await env.call("create_track", name="Lead", kind="midi")
-    r = await env.call("submit", status="done")  # r.reward, r.observation.metadata["score"]
-```
-
-## Benchmarks (Apple M-series, arm64)
-
-| Path | steps/s |
-|---|---|
-| Simulator ops only | ~22,000 |
-| Environment, in-process (FastMCP client overhead) | ~240 |
-| Environment over WebSocket (Docker) | ~270 |
-
-For high-throughput RL use the in-process TRL wrapper, which calls the simulator directly.
-
-`scripts/benchmark.py --url ... --clients 8 --json out.json` also reports step/reset latency
-(p50/p95) and throughput with N concurrent WebSocket sessions.
-
-## Evaluation
-
-```bash
 uv run python -m openenv_daw.runner eval --tasks heldout --policy oracle   # ceiling
-uv run python -m openenv_daw.runner eval --tasks heldout --policy noop     # floors: noop, blocked, random
+uv run python -m openenv_daw.runner eval --tasks heldout --policy noop     # floors: noop, submit_only, blocked, random
 uv run python -m openenv_daw.runner eval --tasks heldout --policy openai --samples 4 --out outputs/m
 ```
 
-Writes `rollouts.jsonl`, `report.json` and `report.md`: success with a Wilson 95% interval, mean
-reward, pass@k / pass^k, breakdowns by family, tag and expected status, the status confusion matrix
-(expected -> submitted), terminations and calls against oracle length.
+`eval` writes `rollouts.jsonl`, `report.json` and `report.md`: success with a 95% interval, mean
+reward and musicality, pass@k, breakdowns by family and tag, and calls against oracle length.
 
-## Web UI (Hugging Face Space)
-
-With `ENABLE_WEB_INTERFACE=true` the server mounts a UI at `/web`: a **DAW Studio** tab (one private
-environment per visitor, arrangement view with piano rolls, live checks with the reward of submitting
-`done` or `blocked` now, manual tool calls, oracle stepping, trajectory download) and the
-stock shared Playground.
-Deploy with the `space-openenv-daw` workflow (manual or `space-v*` tags) or
-`openenv push --repo-id <you>/openenv-daw --hardware cpu-basic --exclude .hfexclude`. The UI runs
-no model, so the Space needs only `cpu-basic`.
-
-Use the deployed environment from Python:
-
-```bash
-pip install git+https://huggingface.co/spaces/gabguerin/openenv-daw
-```
-
-```python
-from openenv_daw.env.client import DawEnv
-
-with DawEnv.from_env("gabguerin/openenv-daw").sync() as env:  # starts the Space image with Docker
-    env.reset(split="heldout", index=0)
-```
-Install the extras with `uv sync --extra server --extra ui`.
-
-## Reward modes
-
-`OPENENV_DAW_REWARD_MODE=shaped` (also `make_environment_class(reward_mode=...)`) gives a failed
-critical gate with the right submit status 0.1 x the fraction of critical checks passed. The default
-`strict` mode scores it 0. Efficiency (`calls`, `oracle_len`, `read_first`) is reported on the score,
-never rewarded.
-
-## Milestone 1
-
-`scripts/oracle_rollout.py` replays every oracle against the Docker server over WebSocket:
-120/120 tasks (60 train, 60 heldout) score 1.0 and replay to an identical state hash.
-
-## License
-
-Apache-2.0. A future headless audio backend (DawDreamer/Pedalboard, GPL-3) would be shipped as a
-separate image under GPL terms.
-
-## Rollouts and SFT data
-
-The runner drives any OpenAI-compatible chat endpoint against the environment, in-process or over
-WebSocket against a running server.
+**Collect rollouts and SFT data** from any OpenAI-compatible endpoint:
 
 ```bash
 uv sync --extra runner
@@ -154,32 +133,38 @@ uv run python -m openenv_daw.runner rollout --split train --n 100 --out rollouts
 uv run python -m openenv_daw.runner export rollouts.jsonl --out sft.jsonl
 ```
 
-`export` keeps only successful episodes, deduplicated by (task, action sequence), and writes
-`{"messages", "tools"}` rows ready for chat-format SFT.
+`export` keeps successful, musical episodes without nudges, deduplicated by task and action
+sequence, as `{"messages", "tools"}` rows for chat-format SFT.
 
-## Training with TRL
+**Train with TRL.** `openenv_daw.trl_env.DawToolEnv` is a TRL `environment_factory` class built
+from the same tool registry. It calls the simulator in-process, so it runs at simulator speed. See
+`examples/grpo_train.py`.
 
-`openenv_daw.trl_env.DawToolEnv` is a TRL `environment_factory` class generated from the same
-FastMCP registry (tool names, signatures and docstrings are not duplicated). It calls the simulator
-in-process, so it avoids the MCP client overhead and runs at simulator speed. `get_reward()` returns
-the episode score; stopping without `submit` is scored as truncated. See `examples/grpo_train.py`.
+| Path | steps/s (Apple M-series) |
+|---|---|
+| Simulator ops only | ~22,000 |
+| Environment, in-process | ~240 |
+| Environment over WebSocket (Docker) | ~270 |
 
-> Mirror of `daw-agent/packages/openenv-daw` (private monorepo). Send changes there.
+## Deploy
 
+- **Hugging Face Space** (the web UI runs no model, so `cpu-basic` is enough):
+  `openenv push --repo-id <you>/openenv-daw --hardware cpu-basic --exclude .hfexclude`, or the
+  `space-openenv-daw` workflow.
+- **Docker**: `docker build -t openenv-daw .` (built on `openenv-base`, dependencies from `uv.lock`).
+- Check it against the OpenEnv standard: `openenv validate --level runtime`.
 
-## Bringing your own DAW (adapter SDK)
+## Go further
 
-`openenv_daw.adapters` lets any DAW be trained against and driven by the same tools:
+- [Design](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md): simulator, profiles,
+  sounds and plugins, foreign objects, task families, scoring details.
+- [Writing an adapter](https://github.com/gabguerin/openenv-daw/blob/main/docs/writing-an-adapter.md):
+  drive your own DAW with the same tools (implement `Driver`, describe devices in a `DeviceMap`,
+  pass `assert_driver_conformance`). The adapter API is provisional until a second driver exists.
+- [CHANGELOG](https://github.com/gabguerin/openenv-daw/blob/main/CHANGELOG.md).
 
-1. Implement the `Driver` protocol (`read_session`, `apply`, optional native `undo`, `close`) for your DAW.
-2. Describe its devices in a `DeviceMap` YAML; parameters it cannot set go in `unsupported_params`.
-3. Run `assert_driver_conformance(driver_factory)` from `openenv_daw.adapters.testing` against the task suite
-   (a `FakeDriver` shows how).
-4. Register a backend factory under the `openenv_daw.backends` entry point group and serve it with
-   `OPENENV_DAW_BACKEND=<name> openenv-daw-server` (or `openenv-daw serve --backend <name>`).
+## License
 
-`MirrorBackend` re-reads the DAW on every call, dry-runs on the simulator, applies one atomic edit, verifies it
-and rolls back on mismatch. Adapters never add tools. Parameter gaps are exposed to the agent as
-`supported: false`; tasks that need an unsupported parameter expect `submit("blocked")`
-(see the `portable_gap` profile). Destructive loading requires the `__openenv_scratch__` marker track.
-The adapter API is provisional until a second driver exists.
+Apache-2.0. A future headless audio backend (DawDreamer/Pedalboard, GPL-3) would be shipped as a
+separate image under GPL terms. This repository mirrors `daw-agent/packages/openenv-daw`; send
+changes to the monorepo.
