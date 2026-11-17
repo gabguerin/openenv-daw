@@ -35,7 +35,7 @@ def test_tools_match_registry_and_manifest():
     registry = set(get_server_tools(server))
     manifest = yaml.safe_load((ROOT / "openenv.yaml").read_text())
     declared = manifest["validation"]["capabilities"]["declared_tools"]
-    assert set(d.agent_tools.names) == registry == set(declared)
+    assert sorted(d.agent_tools.names) == sorted(registry) == sorted(declared)  # no duplicates
 
 
 def test_evidence_files_exist():

@@ -31,7 +31,7 @@ from openenv_daw.server.sim.session import (
 )
 
 from .catalog import DeviceSpec, find_item, load_catalog, search_devices
-from .errors import conflict, invalid, not_found, unsupported
+from .errors import DawError, conflict, invalid, not_found, unsupported
 
 # --- resolution ----------------------------------------------------------------------------
 
@@ -509,28 +509,17 @@ def insert_device(
 def _display_to_norm(ps: Any, dv: float | str) -> float:
     """Normalized position for a display value; stepped parameters take a step name or index."""
     if ps.scale == "steps":
-        if isinstance(dv, str):
-            names = [x.lower() for x in ps.steps]
-            if dv.strip().lower() in names:
-                idx = names.index(dv.strip().lower())
-            else:
-                try:
-                    dv = float(dv)
-                except ValueError:
-                    raise invalid(
-                        f"{dv!r} is not a step of {ps.name!r}; steps: {list(ps.steps)}"
-                    ) from None
-                idx = None
-        else:
-            idx = None
-        if idx is None:
+        not_step = invalid(f"{dv!r} is not a step of {ps.name!r}; steps: {list(ps.steps)}")
+        names = [x.lower() for x in ps.steps]
+        if isinstance(dv, str) and dv.strip().lower() in names:
+            return ps.to_norm(float(names.index(dv.strip().lower())))
+        try:
             f = float(dv)
-            if f != int(f) or not 0 <= f < len(ps.steps):
-                raise invalid(
-                    f"display_value {dv!r} is not a step of {ps.name!r}; steps: {list(ps.steps)}"
-                )
-            idx = int(f)
-        return ps.to_norm(float(idx))
+        except ValueError:
+            raise not_step from None
+        if f != int(f) or not 0 <= f < len(ps.steps):
+            raise not_step
+        return ps.to_norm(f)
     if isinstance(dv, str):
         try:
             dv = float(dv)
@@ -561,13 +550,13 @@ def get_device_params(
 
 def delete_device(s: Session, track: str, device: str) -> dict[str, Any]:
     t = _writable(find_track(s, track))
-    if not any(d.id == device for d in t.devices) and find_foreign_device(t, device):
-        fd = find_foreign_device(t, device)
-        assert fd is not None
-        raise unsupported(
-            f"device {fd.name!r} ({fd.id}) is foreign; racks and plugins cannot be removed here"
-        )
-    d = find_device(t, device)
+    try:
+        d = find_device(t, device)
+    except DawError as e:
+        if e.code == "unsupported":  # a foreign device: say what cannot be done to it
+            msg = e.message.replace("its parameters are read-only", "it cannot be removed here")
+            raise unsupported(msg) from None
+        raise
     t.devices.remove(d)
     return {"ok": True, "deleted": d.id}
 

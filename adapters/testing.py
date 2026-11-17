@@ -233,7 +233,7 @@ TOOL_SCENARIOS: dict[str, list[tuple[str, dict[str, Any], bool]]] = {
         ("update_midi_clip", {"clip": "H2", "length_beats": 2}, True),
         ("get_session", {"include_notes": True}, True),
         ("create_midi_clip", {"track": "Lead", "start_beat": 8, "length_beats": 4, "name": "B"}, True),
-        ("update_midi_clip", {"clip": "B", "start_beat": 5}, False),  # overlaps H2? 5..9 vs 4..6
+        ("update_midi_clip", {"clip": "B", "start_beat": 5}, False),  # 5..9 overlaps H2 at 4..6
         ("delete_clip", {"clip": "B"}, True),
     ],
     "devices": [
