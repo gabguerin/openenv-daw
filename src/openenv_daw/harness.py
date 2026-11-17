@@ -38,6 +38,7 @@ from openenv.core.llm_client import (
     LLMResponse,
     OpenAIClient,
     ToolCall,
+    _mcp_tools_to_openai,
     create_llm_client,
 )
 
@@ -231,6 +232,42 @@ class DawSessionFactory(ResourceSessionFactory[DawSession]):
 # --- model steps -----------------------------------------------------------------------------
 
 
+def to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """MCP tool dicts as OpenAI tools, with the ``return`` key ``get_json_schema`` renders (and
+    every TRL/SFT prompt contains) that OpenEnv's converter drops."""
+    out = _mcp_tools_to_openai(tools)
+    for t in out:
+        t["function"].setdefault("return", {"type": "string"})
+    return out
+
+
+def parse_args(raw: str | None) -> dict[str, Any]:
+    """Tool-call arguments as a dict; malformed JSON becomes ``{}`` so the environment scores the
+    call as an error instead of the episode being lost."""
+    try:
+        v = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return v if isinstance(v, dict) else {}
+
+
+class DawOpenAIClient(OpenAIClient):
+    """``OpenAIClient`` that shows the model the TRL tool schemas and tolerates bad arguments."""
+
+    async def complete_with_tools(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], **kwargs: Any
+    ) -> LLMResponse:
+        kw = self._chat_completion_kwargs(messages, **kwargs)
+        if tools:
+            kw["tools"] = to_openai_tools(tools)
+        msg = (await self._client.chat.completions.create(**kw)).choices[0].message
+        calls = [
+            ToolCall(tc.id, tc.function.name, parse_args(tc.function.arguments))
+            for tc in msg.tool_calls or []
+        ]
+        return LLMResponse(msg.content or "", calls)
+
+
 def teacher_client(
     provider: str = "openai",
     model: str | None = None,
@@ -244,9 +281,10 @@ def teacher_client(
     model = model or os.environ.get("OPENENV_DAW_MODEL")
     if not model:
         raise ValueError("pass a model (or set OPENENV_DAW_MODEL)")
-    llm_endpoint = llm_endpoint or os.environ.get("OPENAI_BASE_URL")
+    if provider == "openai":
+        llm_endpoint = llm_endpoint or os.environ.get("OPENAI_BASE_URL")
     if llm_endpoint:
-        return OpenAIClient(
+        return DawOpenAIClient(
             llm_endpoint,
             llm_port,
             model,
@@ -323,9 +361,11 @@ def collect(
     resume: bool = True,
     prefix: str = "ep",
     metadata: dict[str, Any] | None = None,
+    failed: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Run ``model_step`` on every task ``samples`` times and append each ``EpisodeRecord`` to
-    ``out_dir/results.jsonl`` (resumable by episode id). Returns the records written."""
+    ``out_dir/results.jsonl`` (resumable by episode id). Returns the records written; the task ids
+    of episodes that crashed are appended to ``failed`` (and not recorded, so a resume retries)."""
     serializer = RolloutSerializer(out_dir)
     if not resume and serializer.results_path.exists():
         serializer.results_path.unlink()
@@ -352,6 +392,8 @@ def collect(
         try:
             session = factory.create(task, episode_id=episode_id)
         except Exception as exc:
+            if failed is not None:
+                failed.append(task.task_id)
             return print(f"failed {episode_id}: {type(exc).__name__}: {exc}", file=sys.stderr)
         try:
             rollout = adapter.run_white_box(model_step, session, limits)
@@ -364,6 +406,8 @@ def collect(
                 extra={"profile": session.link.profile},
             )
         except Exception as exc:  # a malformed teacher reply must not kill the whole job
+            if failed is not None:
+                failed.append(task.task_id)
             return print(f"failed {episode_id}: {type(exc).__name__}: {exc}", file=sys.stderr)
         finally:
             session.close()
@@ -383,7 +427,10 @@ def read_results(path: Path) -> list[dict[str, Any]]:
 
 
 def flat(rec: dict[str, Any]) -> dict[str, Any]:
-    """An ``EpisodeRecord`` dict as the flat row the report reads."""
+    """An ``EpisodeRecord`` dict as the flat row the report reads (rows written by the old runner
+    are already flat and returned as is)."""
+    if "verify_metrics" not in rec:
+        return rec
     return {
         "task_id": rec["task"],
         "reward": rec["reward"],

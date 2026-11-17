@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> None:
     c.add_argument("--max-turns", type=int, default=40)
     c.add_argument("--max-tokens", type=int, default=1024)
     c.add_argument("--temperature", type=float, default=0.7)
-    c.add_argument("--workers", type=int, default=4)
+    c.add_argument("--workers", "--concurrency", type=int, default=4)
     c.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
     c.add_argument("--push-to-hub", help="dataset repo id 'user/name'")
     c.add_argument("--private", action="store_true")
@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     v.add_argument("--model")
     v.add_argument("--samples", type=int, default=1)
-    v.add_argument("--workers", type=int, default=4)
+    v.add_argument("--workers", "--concurrency", type=int, default=4)
     v.add_argument("--url")
     v.add_argument(
         "--profile", help="score under one profile (default: portable, plus portable_plugins)"

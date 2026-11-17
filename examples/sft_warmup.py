@@ -25,7 +25,7 @@ def main() -> None:
     a = ap.parse_args()
 
     rows = [json.loads(x) for x in open(a.data) if x.strip()]
-    rows = [r for r in rows if r["reward"] == 1.0]  # the environment's reward labels the data
+    # `export` already kept only episodes the environment verified (success, musical enough)
     for r in rows:  # tool-call arguments as mappings, as chat templates expect
         for m in r["messages"]:
             for tc in m.get("tool_calls") or []:

@@ -51,3 +51,16 @@ def test_export_tools_are_the_trl_schemas(tmp_path: Path):
     export_sft(tmp_path / "r", tmp_path / "sft.jsonl")
     row = json.loads((tmp_path / "sft.jsonl").read_text().splitlines()[0])
     assert json.loads(row["tools"]) == list(tool_schemas())
+
+
+@pytest.mark.parametrize("profile", ["portable", "portable_plugins", "mixer_only"])
+def test_client_sends_the_trl_schemas(profile):
+    from openenv_daw.harness import to_openai_tools
+    from openenv_daw.trl_env import tool_schemas
+
+    mcp = [
+        {"name": s["function"]["name"], "description": s["function"]["description"],
+         "inputSchema": s["function"]["parameters"]}
+        for s in tool_schemas(profile)
+    ]  # fmt: skip
+    assert to_openai_tools(mcp) == list(tool_schemas(profile))

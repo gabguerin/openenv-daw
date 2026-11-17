@@ -210,6 +210,7 @@ def evaluate(
     factory = DawSessionFactory(
         TaskStore(tasks), profile, backend_factory=backend_factory, base_url=url
     )
+    failed: list[str] = []
     records = collect(
         factory,
         model_step,
@@ -219,8 +220,23 @@ def evaluate(
         workers=workers,
         resume=False,
         metadata={"policy": policy_name},
+        failed=failed,
     )
-    rep = build_report([flat(r) for r in records], resolved, policy_name)
+    # a crashed episode is a failed episode, not a missing one
+    lost: list[dict[str, Any]] = [
+        {
+            "task_id": t,
+            "reward": 0.0,
+            "success": False,
+            "termination": "failed",
+            "actions": [],
+            "step_log": [],
+            "musicality": None,
+            "error_count": 0,
+        }
+        for t in failed
+    ]
+    rep = build_report([*(flat(r) for r in records), *lost], resolved, policy_name)
     rep["profile"] = profile
     (out_dir / "report.json").write_text(json.dumps(rep, indent=2))
     (out_dir / "report.md").write_text(report_markdown(rep))

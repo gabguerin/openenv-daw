@@ -91,3 +91,28 @@ def test_instructions_follow_server_profile(tmp_path):
         tmp_path,
     )
     assert recs[0]["messages"][0]["content"] == load_instructions("mixer_only")
+
+
+def test_crashed_episode_counts_as_a_failure(tmp_path):
+    from openenv_daw.runner.report import evaluate
+
+    tasks = select_tasks("heldout", 3)
+
+    def crash(messages, tools, sampling):
+        raise RuntimeError("endpoint down")
+
+    rep = evaluate("openai", tasks, tmp_path, model_step=crash, workers=1)
+    assert rep["episodes"] == 3 and rep["success"] == 0
+    assert rep["terminations"] == {"failed": 3}
+
+
+def test_malformed_tool_arguments_become_an_empty_call():
+    from openenv_daw.harness import parse_args
+
+    assert parse_args('{"a": 1}') == {"a": 1}
+    assert parse_args("{oops") == {} and parse_args("[1]") == {} and parse_args(None) == {}
+
+
+def test_legacy_records_pass_through_flat():
+    old = {"task_id": "t", "success": True, "reward": 1.0, "termination": "submit", "messages": []}
+    assert flat(old) is old
