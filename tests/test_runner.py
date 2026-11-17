@@ -110,3 +110,21 @@ def test_malformed_tool_arguments_become_an_empty_call():
 def test_legacy_records_pass_through_flat():
     old = {"task_id": "t", "success": True, "reward": 1.0, "termination": "submit", "messages": []}
     assert flat(old) is old
+
+
+def test_collect_records_version_and_commit_and_refuses_mixed_resume(tmp_path, monkeypatch):
+    import pytest
+    from openenv_daw.training import harness
+
+    tasks = select_tasks("train", 1)
+    factory = DawSessionFactory()
+    oracle = scripted_model_step("oracle", tasks)
+    monkeypatch.setattr(harness, "_git_state", lambda: ("a" * 40, True))
+    collect(factory, oracle, tasks, tmp_path)
+    meta = json.loads((tmp_path / "metadata.json").read_text())
+    assert meta["env_version"] and meta["git_sha"] == "a" * 40 and meta["git_dirty"] is True
+    monkeypatch.setattr(harness, "_git_state", lambda: ("b" * 40, False))
+    with pytest.raises(RuntimeError, match="collected at commit"):
+        collect(factory, oracle, tasks, tmp_path)
+    monkeypatch.setattr(harness, "_git_state", lambda: (None, None))
+    collect(factory, oracle, tasks, tmp_path)  # no git: no check

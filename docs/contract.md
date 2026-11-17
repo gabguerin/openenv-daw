@@ -13,5 +13,5 @@
   editable), `rack` or `plugin` (read-only). Adapters map ids in their `DeviceMap` `library:`
   section.
 - **Errors**: `not_found`, `invalid_args`, `conflict`, `unsupported`, `execution_error`.
-- **Changes**: a change to the tools, the Session schema or `server/instructions.md` is listed in
-  `CHANGELOG.md`. `openenv_daw.adapters` stays provisional until a second driver exists.
+- **Changes**: a change to the tools, the Session schema or `server/instructions.md` is listed under
+  `Unreleased` in `CHANGELOG.md`. `openenv_daw.adapters` stays provisional until a second driver exists.

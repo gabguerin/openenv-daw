@@ -11,9 +11,11 @@ prompt surface.
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import os
 import random
+import subprocess
 import sys
 import threading
 from collections.abc import Callable
@@ -332,6 +334,27 @@ def _text(s: str) -> ModelStepResult:
 # --- collection ------------------------------------------------------------------------------
 
 
+def _git_state() -> tuple[str | None, bool | None]:
+    """(HEAD sha, tree has uncommitted changes) of the package checkout; (None, None) without git."""
+    cwd = Path(__file__).resolve().parent
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=cwd, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        dirty = bool(
+            subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None, None
+    return sha, dirty
+
+
 def collect(
     factory: DawSessionFactory,
     model_step: ModelStep,
@@ -352,9 +375,23 @@ def collect(
     serializer = RolloutSerializer(out_dir)
     if not resume and serializer.results_path.exists():
         serializer.results_path.unlink()
+    git_sha, git_dirty = _git_state()
+    if resume and serializer.metadata_path.exists():
+        try:
+            recorded = json.loads(serializer.metadata_path.read_text()).get("git_sha")
+        except ValueError:
+            recorded = None
+        if recorded and git_sha and recorded != git_sha:
+            raise RuntimeError(
+                f"{out_dir} was collected at commit {recorded}, now at {git_sha}; "
+                "use a new output directory or resume=False"
+            )
     serializer.write_metadata(
         {
             "env": "openenv-daw",
+            "env_version": importlib.metadata.version("openenv-daw"),
+            "git_sha": git_sha,
+            "git_dirty": git_dirty,
             "num_episodes_requested": len(tasks) * samples,
         }
         | (metadata or {})
