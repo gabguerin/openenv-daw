@@ -54,12 +54,17 @@ and uses unseen templates and slot values. Rebuild it with `scripts/build_heldou
 
 ## Scoring
 
-1. Gate: any failed critical check, or a wrong submit status, scores 0. No `submit` scores 0.
-2. Net score: the fraction of non-critical checks passed, minus damage (changing untouchable
-   objects or adding extraneous ones; 0.15 each, shared cap 0.5) and 0.02 per tool error (cap 0.2).
-3. Musicality: for musical tasks, `reward = (1 - W) * net + W * min(1, musicality / 0.8)` with
-   W = 0.2 (`MUSIC_WEIGHT` in `server/rewards/score.py`). It applies only after the gate passes.
-4. `metadata["success"]` is binary and ignores musicality.
+The reward is a rubric tree (`DawRubric` in `server/rewards/score.py`); the server, the TRL
+wrapper and the web UI all read it.
+
+1. Gates: any of these scores 0: a wrong or missing submit status (`status`), a change to an
+   object the task did not declare touchable (`safety`), a failed critical check (`critical`).
+2. Correctness: the fraction of non-critical checks passed, multiplied by
+   `1 - min(0.5, 0.15 * extra_objects)` and `1 - min(0.2, 0.02 * tool_errors)`.
+3. Musicality: for musical tasks, `reward = (1 - W) * correctness + W * min(1, musicality / 0.8)`
+   with W = 0.2 (`MUSIC_WEIGHT`). It applies only after the gates pass.
+4. `metadata["success"]` is binary and ignores musicality. `named_rubrics()` shows each
+   component's last score.
 
 Efficiency (`calls`, `oracle_len`, `read_first`) is reported on the score, never rewarded.
 
