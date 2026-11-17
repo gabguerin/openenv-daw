@@ -3,12 +3,11 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-
-from openenv_daw.env import DawEnvironment
-from openenv_daw.rewards.rubrics import score_episode
-from openenv_daw.schema import Session
+from openenv_daw.server.daw_environment import DawEnvironment
+from openenv_daw.server.rewards.score import score_episode
+from openenv_daw.server.sim.session import Session
+from openenv_daw.server.tasks.generators import families, generate
 from openenv_daw.server.ui import render
-from openenv_daw.tasks.generators import families, generate
 
 
 @pytest.mark.parametrize("family", list(families()))
@@ -32,7 +31,7 @@ def test_render_oracle_final_state(family):
 
 def test_names_are_escaped():
     s = Session()
-    from openenv_daw.sim import ops
+    from openenv_daw.server.sim import ops
 
     ops.create_track(s, "<script>x</script>", "midi")
     assert "<script>" not in render.session_html(s)
@@ -48,7 +47,6 @@ def test_projections_match_score_episode():
 
 def test_studio_builds_with_independent_sessions():
     import gradio as gr
-
     from openenv_daw.server.ui.studio import Session as UiSession
     from openenv_daw.server.ui.studio import build_daw_studio
 
@@ -99,7 +97,7 @@ def test_track_diff_flags_new_and_changed():
 
 
 def test_arrangement_markers_for_foreign_and_damage():
-    from openenv_daw.schema import Track
+    from openenv_daw.server.sim.session import Track
 
     s = Session()
     s.tracks.append(Track(id="trk_1", name="Bus", kind="group"))

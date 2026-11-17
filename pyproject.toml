@@ -1,6 +1,6 @@
 [project]
 name = "openenv-daw"
-version = "0.4.0"
+version = "0.5.0"
 description = "OpenEnv environment for DAW tool use: a lightweight JSON DAW simulator behind a portable MCP tool set"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -22,31 +22,60 @@ trl = ["trl>=1.17", "datasets"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "mypy>=1.10", "types-pyyaml", "httpx>=0.27"]
 
 [project.entry-points."openenv_daw.backends"]
-sim = "openenv_daw.backends.sim:SimBackend"
+sim = "openenv_daw.server.backends:SimBackend"
 
 [project.scripts]
 server = "openenv_daw.server.app:main"
-openenv-daw-server = "openenv_daw.server.app:main"
 openenv-daw = "openenv_daw.cli:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/openenv_daw"]
+# The package root is this folder (the `openenv init` layout); the import name is `openenv_daw`.
+[tool.setuptools]
+include-package-data = true
+packages = [
+    "openenv_daw",
+    "openenv_daw.server",
+    "openenv_daw.server.sim",
+    "openenv_daw.server.rewards",
+    "openenv_daw.server.tasks",
+    "openenv_daw.server.tasks.templates",
+    "openenv_daw.server.ui",
+    "openenv_daw.adapters",
+    "openenv_daw.training",
+]
+
+[tool.setuptools.package-dir]
+openenv_daw = "."
+"openenv_daw.server" = "server"
+"openenv_daw.server.sim" = "server/sim"
+"openenv_daw.server.rewards" = "server/rewards"
+"openenv_daw.server.tasks" = "server/tasks"
+"openenv_daw.server.tasks.templates" = "server/tasks/templates"
+"openenv_daw.server.ui" = "server/ui"
+"openenv_daw.adapters" = "adapters"
+"openenv_daw.training" = "training"
+
+[tool.setuptools.package-data]
+"openenv_daw" = ["py.typed"]
+"openenv_daw.server" = ["instructions.md"]
+"openenv_daw.server.sim" = ["*.yaml"]
+"openenv_daw.server.tasks" = ["*.jsonl"]
+"openenv_daw.server.tasks.templates" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-q"
+addopts = "-q --import-mode=importlib"
 
 [tool.ruff]
 extend-exclude = ["examples"]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests"]
+src = [".", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -56,5 +85,3 @@ ignore = ["E501"]
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
-mypy_path = "src"
-explicit_package_bases = true

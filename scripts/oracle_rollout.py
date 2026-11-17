@@ -10,9 +10,9 @@ import argparse
 import asyncio
 import sys
 
-from openenv_daw.env.client import DawEnv
-from openenv_daw.tasks.generators import families, generate
-from openenv_daw.tasks.store import load_heldout
+from openenv_daw.client import DawEnv
+from openenv_daw.server.tasks.generators import families, generate
+from openenv_daw.server.tasks.store import load_heldout
 
 
 async def replay(env: DawEnv, task) -> tuple[float | None, str, str]:

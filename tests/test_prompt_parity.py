@@ -9,10 +9,10 @@ import pytest
 
 pytest.importorskip("transformers")
 
-from openenv_daw.harness import DawSessionFactory, collect, scripted_model_step
-from openenv_daw.runner.sft_export import export_sft
-from openenv_daw.tasks.store import default_store
-from openenv_daw.trl_env import DawToolEnv, tool_schemas
+from openenv_daw.server.tasks.store import default_store
+from openenv_daw.training.harness import DawSessionFactory, collect, scripted_model_step
+from openenv_daw.training.sft_export import export_sft
+from openenv_daw.training.trl_env import DawToolEnv, tool_schemas
 
 
 def test_session_tools_equal_trl_tools():
@@ -53,14 +53,13 @@ def test_export_tools_are_the_trl_schemas(tmp_path: Path):
     assert json.loads(row["tools"]) == list(tool_schemas())
 
 
-@pytest.mark.parametrize("profile", ["portable", "portable_plugins", "mixer_only"])
-def test_client_sends_the_trl_schemas(profile):
-    from openenv_daw.harness import to_openai_tools
-    from openenv_daw.trl_env import tool_schemas
+def test_client_sends_the_trl_schemas():
+    from openenv_daw.training.harness import to_openai_tools
+    from openenv_daw.training.trl_env import tool_schemas
 
     mcp = [
         {"name": s["function"]["name"], "description": s["function"]["description"],
          "inputSchema": s["function"]["parameters"]}
-        for s in tool_schemas(profile)
+        for s in tool_schemas()
     ]  # fmt: skip
-    assert to_openai_tools(mcp) == list(tool_schemas(profile))
+    assert to_openai_tools(mcp) == list(tool_schemas())

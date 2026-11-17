@@ -4,8 +4,8 @@ import json
 import random
 import statistics
 
-from openenv_daw.music import scale_pitches
-from openenv_daw.rewards.musicality import melody_score
+from openenv_daw.server.music import scale_pitches
+from openenv_daw.server.rewards.musicality import melody_score
 
 d = json.load(open("tests/fixtures/reference_melodies.json"))["melodies"]
 sc = []

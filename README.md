@@ -39,7 +39,7 @@ folder:
 
 ```bash
 uv sync --extra server --extra ui     # once
-ENABLE_WEB_INTERFACE=true openenv serve
+ENABLE_WEB_INTERFACE=true uv run server
 ```
 
 Open <http://localhost:8000/web> and use the **DAW Studio** tab:
@@ -49,10 +49,10 @@ Open <http://localhost:8000/web> and use the **DAW Studio** tab:
    reference solution.
 3. Watch the **Checks** and the **reward if you submit now**, then call `submit`.
 
-`openenv serve` runs on the host. To run in a container instead:
+`uv run server` runs on the host. To run in a container instead:
 
 ```bash
-openenv build -t openenv-daw
+docker build -f server/Dockerfile -t openenv-daw .
 docker run -p 8000:8000 -e ENABLE_WEB_INTERFACE=true openenv-daw
 ```
 
@@ -63,7 +63,7 @@ pip install openenv-daw
 ```
 
 ```python
-from openenv_daw.env.client import DawEnv
+from openenv_daw.client import DawEnv
 
 with DawEnv(base_url="http://localhost:8000").sync() as env:
     r = env.reset(split="train", seed=3)
@@ -80,7 +80,7 @@ code. To start a deployed Space image locally: `DawEnv.from_env("<user>/openenv-
 ## What the agent can do
 
 15 portable tools plus `submit`. Every result is JSON, and errors are typed (`not_found`,
-`invalid_args`, `conflict`, `unsupported`).
+`invalid_args`, `conflict`, `unsupported`, `execution_error`).
 
 | Area | Tools |
 |---|---|
@@ -104,7 +104,7 @@ Tasks come in families, from simple to compositional:
 | `infeasible` | About 10% of tasks: the right answer is `submit("blocked")`. |
 
 Difficulty tags `L1` to `L3`. Train tasks are generated from seeds; the held-out set
-`heldout_v6.jsonl` has 212 tasks with unseen templates and values.
+`heldout.jsonl` has 212 tasks with unseen templates and values.
 
 ## How scoring works
 
@@ -113,10 +113,8 @@ Difficulty tags `L1` to `L3`. Train tasks are generated from seeds; the held-out
    task did not touch and for tool errors.
 3. **Musicality.** For musical tasks, 20% of the reward is a soft musicality score (melody shape,
    voice leading, rhythm). It counts only after the gate passes and never changes `success`.
-   Set `OPENENV_DAW_MUSIC_WEIGHT=0` to turn it off.
 
-`metadata["success"]` is binary and about correctness only. For training you can use
-`OPENENV_DAW_REWARD_MODE=shaped`, which gives partial credit for passing critical checks.
+`metadata["success"]` is binary and about correctness only.
 Details: [docs/design.md](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md#scoring).
 
 ## Evaluate and train
@@ -124,9 +122,9 @@ Details: [docs/design.md](https://github.com/gabguerin/openenv-daw/blob/main/doc
 ```bash
 uv sync --all-extras
 uv run pytest
-uv run python -m openenv_daw.runner eval --tasks heldout --policy oracle   # ceiling
-uv run python -m openenv_daw.runner eval --tasks heldout --policy noop     # floors: noop, submit_only, blocked, random
-uv run python -m openenv_daw.runner eval --tasks heldout --policy openai --samples 4 --out outputs/m
+uv run python -m openenv_daw.training eval --tasks heldout --policy oracle   # ceiling
+uv run python -m openenv_daw.training eval --tasks heldout --policy noop     # floors: noop, submit_only, blocked, random
+uv run python -m openenv_daw.training eval --tasks heldout --policy openai --samples 4 --out outputs/m
 ```
 
 `eval` writes `results.jsonl`, `report.json` and `report.md`: success with a 95% interval, mean
@@ -139,17 +137,17 @@ reward and musicality, pass@k, breakdowns by family and tag, and calls against o
 uv sync --extra runner --extra trl
 export OPENAI_API_KEY=...
 # 1. teacher rollouts: results.jsonl + metadata.json, resumable, optionally pushed to the Hub
-uv run python -m openenv_daw.runner collect --provider openai --model gpt-5-mini -n 300 \
+uv run python -m openenv_daw.training collect --provider openai --model gpt-5-mini -n 300 \
     -o rollouts [--push-to-hub <you>/daw-rollouts]
 #    self-hosted teacher: --llm-endpoint http://localhost:8000 --model Qwen/Qwen3-8B
 # 2. filter by the environment's verdict into chat rows {messages, tools, reward, task_id}
-uv run python -m openenv_daw.runner export rollouts -o sft.jsonl
+uv run python -m openenv_daw.training export rollouts -o sft.jsonl
 # 3. SFT warm-up (format compliance), then GRPO from the checkpoint
 uv run python examples/sft_warmup.py --data sft.jsonl --model Qwen/Qwen3-1.7B
 uv run python examples/grpo_train.py --model runs/daw-sft
 ```
 
-`openenv collect` itself only knows `openspiel` and `reasoning_gym`; `openenv_daw.harness` is this
+`openenv collect` itself only knows `openspiel` and `reasoning_gym`; `openenv_daw.training.harness` is this
 environment's session factory (`DawSessionFactory`) on the same OpenEnv harness. `export` keeps
 successful, musical episodes (musicality of at least 0.6), deduplicated by task and action sequence.
 `DawToolEnv` is a TRL `environment_factory` class built from the same tool registry (reward from
@@ -182,8 +180,8 @@ on `openenv-base` with dependencies from `uv.lock`. To use a deployed Space from
 
 ## Go further
 
-- [Design](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md): simulator, profiles,
-  sounds and plugins, foreign objects, task families, scoring details.
+- [Design](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md): simulator, sounds and
+  plugins, foreign objects, task families, scoring details.
 - [Writing an adapter](https://github.com/gabguerin/openenv-daw/blob/main/docs/writing-an-adapter.md):
   drive your own DAW with the same tools (implement `Driver`, describe devices in a `DeviceMap`,
   pass `assert_driver_conformance`). The adapter API is provisional until a second driver exists.

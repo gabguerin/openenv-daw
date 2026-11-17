@@ -1,7 +1,7 @@
 """SFT warm-up on collected rollouts (OpenEnv "Collect Rollouts for SFT" tutorial), then GRPO.
 
-    uv run python -m openenv_daw.runner collect --provider openai --model gpt-5-mini -n 300 -o rollouts
-    uv run python -m openenv_daw.runner export rollouts -o sft.jsonl
+    uv run python -m openenv_daw.training collect --provider openai --model gpt-5-mini -n 300 -o rollouts
+    uv run python -m openenv_daw.training export rollouts -o sft.jsonl
     uv run python examples/sft_warmup.py --data sft.jsonl --model Qwen/Qwen3-1.7B
     uv run python examples/grpo_train.py --model runs/daw-sft
 

@@ -9,11 +9,10 @@ import statistics
 from pathlib import Path
 
 import pytest
-
-from openenv_daw.env.episode import Episode
-from openenv_daw.music import scale_pitches
-from openenv_daw.rewards.musicality import chords_score, drums_score, melody_score
-from openenv_daw.tasks.generators import generate
+from openenv_daw.server.episode import Episode
+from openenv_daw.server.music import scale_pitches
+from openenv_daw.server.rewards.musicality import chords_score, drums_score, melody_score
+from openenv_daw.server.tasks.generators import generate
 
 FIXTURE = Path(__file__).parent / "fixtures" / "reference_melodies.json"
 
@@ -78,7 +77,7 @@ def test_oracle_is_musical_and_full_reward(family):
             t = generate(family, seed, split)
             if not t.music or t.expected_status != "done":
                 continue
-            ep = Episode(t, "portable", max_steps=40, max_consecutive_errors=3)
+            ep = Episode(t, max_steps=40, max_consecutive_errors=3)
             for o in t.oracle:
                 ep.run(o.tool, copy.deepcopy(o.args))
             s = ep.score
@@ -104,7 +103,7 @@ def test_unmusical_but_correct_melody_earns_less_but_still_succeeds():
             for n, p in zip(args["notes"], pitches, strict=True):
                 n["pitch"] = p
                 n["velocity"] = 90
-    ep = Episode(t, "portable", max_steps=40, max_consecutive_errors=3)
+    ep = Episode(t, max_steps=40, max_consecutive_errors=3)
     for tool, args in steps:
         ep.run(tool, args)
     assert ep.score.success  # correctness is unchanged
@@ -113,15 +112,15 @@ def test_unmusical_but_correct_melody_earns_less_but_still_succeeds():
 
 def test_musicality_never_lifts_a_failed_gate(monkeypatch):
     t = generate("melody_in_key", 0, "train")
-    ep = Episode(t, "portable", max_steps=40, max_consecutive_errors=3)
+    ep = Episode(t, max_steps=40, max_consecutive_errors=3)
     ep.run("submit", {"status": "done"})  # nothing built: critical checks fail
     assert ep.score.reward == 0.0
 
 
 def test_music_weight_zero_disables_bonus(monkeypatch):
-    monkeypatch.setenv("OPENENV_DAW_MUSIC_WEIGHT", "0")
+    monkeypatch.setattr("openenv_daw.server.rewards.score.MUSIC_WEIGHT", 0.0)
     t = generate("melody_in_key", 0, "train")
-    ep = Episode(t, "portable", max_steps=40, max_consecutive_errors=3)
+    ep = Episode(t, max_steps=40, max_consecutive_errors=3)
     for o in t.oracle:
         ep.run(o.tool, copy.deepcopy(o.args))
     assert ep.score.reward == 1.0

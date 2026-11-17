@@ -1,7 +1,7 @@
 import pytest
-
-from openenv_daw.harness import flat, read_results
-from openenv_daw.runner.report import (
+from openenv_daw.server.tasks.store import default_store
+from openenv_daw.training.harness import flat, read_results
+from openenv_daw.training.report import (
     build_report,
     evaluate,
     load_task_set,
@@ -9,8 +9,6 @@ from openenv_daw.runner.report import (
     pass_pow_k,
     wilson,
 )
-from openenv_daw.tasks.resolve import resolve_for_profile
-from openenv_daw.tasks.store import default_store
 
 
 def test_wilson_and_passk():
@@ -30,9 +28,7 @@ def test_oracle_ceiling_and_floors(tmp_path):
     floor = 0.1  # openenv.yaml validation.reward.floor_margin
     for name in ("noop", "submit_only", "blocked"):
         rep = evaluate(name, tasks, tmp_path / name)
-        feasible = [
-            t.task_id for t in tasks if resolve_for_profile(t, "portable").expected_status == "done"
-        ]
+        feasible = [t.task_id for t in tasks if t.expected_status == "done"]
         recs = [flat(r) for r in read_results(tmp_path / name)]
         got = [r["reward"] for r in recs if r["task_id"] in feasible]
         assert max(got) <= floor, name

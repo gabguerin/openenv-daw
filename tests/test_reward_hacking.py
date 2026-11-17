@@ -6,15 +6,14 @@ import copy
 from typing import Any
 
 import pytest
+from openenv_daw.server.episode import Episode
+from openenv_daw.server.music import CLAP, CLOSED_HAT, KICK, SNARE
+from openenv_daw.server.tasks.generators import generate
+from openenv_daw.server.tasks.model import Task
 
-from openenv_daw.env.episode import Episode
-from openenv_daw.music import CLAP, CLOSED_HAT, KICK, SNARE
-from openenv_daw.tasks.generators import generate
-from openenv_daw.tasks.model import Task
 
-
-def run(task: Task, steps: list[dict[str, Any]], profile: str = "portable") -> Episode:
-    ep = Episode(task, profile, max_steps=30, max_consecutive_errors=3)
+def run(task: Task, steps: list[dict[str, Any]]) -> Episode:
+    ep = Episode(task, max_steps=30, max_consecutive_errors=3)
     for s in steps:
         if ep.done:
             break
@@ -91,7 +90,7 @@ def test_drum_spam_fails():
 
 
 def test_junk_objects_are_penalized(monkeypatch):
-    monkeypatch.setenv("OPENENV_DAW_MUSIC_WEIGHT", "0")
+    monkeypatch.setattr("openenv_daw.server.rewards.score.MUSIC_WEIGHT", 0.0)
     t = first("melody_in_key")
     steps = oracle(t)[:-1] + [
         {"tool": "create_track", "args": {"name": "Junk", "kind": "midi"}},
@@ -107,7 +106,7 @@ def test_junk_objects_are_penalized(monkeypatch):
 
 
 def test_each_extraneous_object_costs_015(monkeypatch):
-    monkeypatch.setenv("OPENENV_DAW_MUSIC_WEIGHT", "0")
+    monkeypatch.setattr("openenv_daw.server.rewards.score.MUSIC_WEIGHT", 0.0)
     t = first("melody_in_key")
     steps = oracle(t)[:-1] + [
         {"tool": "create_track", "args": {"name": "Extra", "kind": "midi"}},
@@ -161,27 +160,6 @@ def test_template_promoted_check_is_critical():
     assert next(c for c in t.checks if c.kind == "notes_monophonic").critical
 
 
-def test_shaped_reward_is_small_and_opt_in():
-    t = first("melody_in_key")
-    steps = oracle(t)
-    for st in steps:
-        notes = st["args"].get("notes")
-        if notes:
-            p = notes[0]["pitch"]
-            for n in notes:
-                n["pitch"] = p
-    ep = Episode(t, "portable", 30, 3, reward_mode="shaped")
-    for s in steps:
-        ep.run(s["tool"], s["args"])
-    assert 0 < ep.score.reward <= 0.1 and not ep.score.success
-    assert run(t, steps).score.reward == 0.0  # strict stays zero
-    # a wrong status is never rewarded, even when shaped
-    ep2 = Episode(t, "portable", 30, 3, reward_mode="shaped")
-    for s in oracle(t)[:-1] + [{"tool": "submit", "args": {"status": "blocked"}}]:
-        ep2.run(s["tool"], s["args"])
-    assert ep2.score.reward == 0.0
-
-
 def test_diagnostics_are_reported_not_rewarded():
     t = first("melody_in_key")
     s = run(t, [{"tool": "get_session", "args": {}}, *oracle(t)]).score
@@ -220,7 +198,7 @@ def test_device_tweak_tolerance():
 
 
 def test_store_sample_by_tag():
-    from openenv_daw.tasks.store import default_store
+    from openenv_daw.server.tasks.store import default_store
 
     t = default_store().sample("train", 3, tags=["L3"])
     assert "L3" in t.tags
@@ -234,10 +212,10 @@ def _notes_step(steps):
 
 
 def test_submit_done_alone_never_solves_a_task():
-    from openenv_daw.tasks.store import load_heldout
+    from openenv_daw.server.tasks.store import load_heldout
 
     submit = [{"tool": "submit", "args": {"status": "done"}}]
-    from openenv_daw.tasks.generators import families
+    from openenv_daw.server.tasks.generators import families
 
     tasks = [generate(f, s, "train") for f in families() for s in range(40)]
     tasks += load_heldout()
@@ -321,7 +299,7 @@ def test_missing_requested_hats_fails():
 
 
 def test_chord_numeral_case_sets_quality():
-    from openenv_daw.music import roman_chord
+    from openenv_daw.server.music import roman_chord
 
     assert roman_chord("G major", "vi") == [4, 7, 11]  # Em
     assert roman_chord("G major", "VI") == [4, 8, 11]  # E major

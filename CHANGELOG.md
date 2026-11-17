@@ -1,7 +1,23 @@
 # Changelog
 
-Contract versions (`openenv_daw.versions`) change whenever the tools, the Session schema or the
-instructions change. The `openenv_daw.adapters` API is provisional until a second driver exists.
+The `openenv_daw.adapters` API is provisional until a second driver exists.
+
+## 0.5.0
+
+Breaking: rebuilt on the `openenv init` layout, with the guardrails that did not pay for their
+complexity removed.
+
+- Layout: `models.py`, `client.py`, `openenv.yaml` at the root; the environment is under `server/`
+  (`app.py`, `daw_environment.py`, `Dockerfile`, `sim/`, `tasks/`, `rewards/`, `ui/`). Import paths
+  are now `openenv_daw.server.*`.
+- Removed: capability profiles, `requires`, parameter masks and `supported: false`, shaped reward
+  mode, contract versions, `inconsistent_state`, mirror verification and rollback (`Tolerances`),
+  `Driver.capabilities`/`native_undo`/`undo_last`, `render`, the Task API and foreign-object
+  injection in generated tasks.
+- Held-out set is a single `server/tasks/heldout.jsonl` (212 tasks); older `heldout_v*` are gone.
+- `Episode(task, max_steps, max_consecutive_errors, backend_factory)`, `resolve_backend(name)()`
+  and `make_environment_class(...)` take no profile.
+- `scripts/typecheck.sh` runs mypy for the new layout.
 
 ## 0.4.0
 

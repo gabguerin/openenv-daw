@@ -2,8 +2,9 @@ import json
 
 from openenv.core.harness import ModelStepResult
 from openenv.core.llm_client import LLMResponse, ToolCall
-
-from openenv_daw.harness import (
+from openenv_daw.server.tasks.store import default_store
+from openenv_daw.server.tools import load_instructions
+from openenv_daw.training.harness import (
     DawSessionFactory,
     collect,
     flat,
@@ -11,9 +12,7 @@ from openenv_daw.harness import (
     scripted_model_step,
     select_tasks,
 )
-from openenv_daw.runner.sft_export import export_sft
-from openenv_daw.tasks.store import default_store
-from openenv_daw.tools import load_instructions
+from openenv_daw.training.sft_export import export_sft
 
 
 def broken(messages, tools, sampling):
@@ -82,19 +81,14 @@ def test_select_tasks_heldout_and_family():
     assert select_tasks("train", 3)[0].task_id == default_store().sample("train", 0).task_id
 
 
-def test_instructions_follow_server_profile(tmp_path):
+def test_rollouts_start_with_the_environment_instructions(tmp_path):
     tasks = select_tasks("train", 1)
-    recs = collect(
-        DawSessionFactory(profile="mixer_only"),
-        scripted_model_step("oracle", tasks),
-        tasks,
-        tmp_path,
-    )
-    assert recs[0]["messages"][0]["content"] == load_instructions("mixer_only")
+    recs = collect(DawSessionFactory(), scripted_model_step("oracle", tasks), tasks, tmp_path)
+    assert recs[0]["messages"][0]["content"] == load_instructions()
 
 
 def test_crashed_episode_counts_as_a_failure(tmp_path):
-    from openenv_daw.runner.report import evaluate
+    from openenv_daw.training.report import evaluate
 
     tasks = select_tasks("heldout", 3)
 
@@ -107,7 +101,7 @@ def test_crashed_episode_counts_as_a_failure(tmp_path):
 
 
 def test_malformed_tool_arguments_become_an_empty_call():
-    from openenv_daw.harness import parse_args
+    from openenv_daw.training.harness import parse_args
 
     assert parse_args('{"a": 1}') == {"a": 1}
     assert parse_args("{oops") == {} and parse_args("[1]") == {} and parse_args(None) == {}

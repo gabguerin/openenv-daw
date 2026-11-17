@@ -14,7 +14,7 @@ import argparse
 from datasets import Dataset
 from trl import GRPOConfig, GRPOTrainer
 
-from openenv_daw.trl_env import DawToolEnv, build_dataset
+from openenv_daw.training.trl_env import DawToolEnv, build_dataset
 
 
 def main() -> None:

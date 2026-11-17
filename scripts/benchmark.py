@@ -14,12 +14,11 @@ import time
 from typing import Any
 
 from openenv.core.env_server.mcp_types import CallToolAction
-
-from openenv_daw.backends import SimBackend
-from openenv_daw.env.client import DawEnv
-from openenv_daw.env.environment import DawEnvironment
-from openenv_daw.schema import Session
-from openenv_daw.tasks.generators import families, generate
+from openenv_daw.client import DawEnv
+from openenv_daw.server.backends import SimBackend
+from openenv_daw.server.daw_environment import DawEnvironment
+from openenv_daw.server.sim.session import Session
+from openenv_daw.server.tasks.generators import families, generate
 
 
 def tasks(n: int):
