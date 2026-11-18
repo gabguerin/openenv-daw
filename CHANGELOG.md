@@ -26,6 +26,10 @@ First release, not yet published. This section describes the current feature set
   with difficulty tags.
 - **Task families** `remove_device` and `clip_edit` exercise `delete_device` and `update_midi_clip`;
   the held-out set is 242 tasks (the first 212 are unchanged).
+- **Held-out v8**: the key pools of `chord_progression` and `melody_in_key` are rebalanced. Train
+  covers 20 keys, including sharps and flats; held-out keeps four unseen keys (`Ab major`,
+  `B major`, `C# minor`, `F minor`). The melody, chord and compositional held-out tasks are
+  regenerated, so v8 is not comparable with v7 on those families; the other families are unchanged.
 - **Prompt**: the instructions ask for varied drum velocities and for deciding on `blocked` before
   any edit. the SFT export always writes the deployment prompt as the system message.
 - **Scoring**: foreign-device parameters and float round-trip noise in device parameters do not

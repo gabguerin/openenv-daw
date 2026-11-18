@@ -173,8 +173,8 @@ and values that never appear in `train`; 29 tasks (12%) are infeasible, so the r
 No feasible task is solved by doing nothing, and every oracle scores 1.0. As a learned reference, a
 LoRA-SFT `LFM3-1.7B` student solved 102/212 (48.1%) of an earlier 212-task version of this split
 (95% CI 41.5% to 54.8%): near-perfect on `session_setup`, `near_miss` and `mix_balance`, but 0% on
-`melody_in_key` and `chord_progression`. Writing music is the open problem, which is where RL
-should help.
+`melody_in_key` and `chord_progression`. Part of that was the key split: v7 trained on natural-note
+keys only and held out sharps and flats, so v8 trains on 20 keys and holds out four unseen ones.
 
 ## Deploy and share
 
