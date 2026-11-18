@@ -1916,9 +1916,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-runner = [
-    { name = "openai" },
-]
 server = [
     { name = "uvicorn" },
 ]
@@ -1945,14 +1942,13 @@ requires-dist = [
     { name = "datasets", marker = "extra == 'trl'" },
     { name = "fastmcp", specifier = ">=3,<4" },
     { name = "gradio", extras = ["oauth"], marker = "extra == 'ui'", specifier = ">=4" },
-    { name = "openai", marker = "extra == 'runner'", specifier = ">=1.40" },
     { name = "openenv", specifier = ">=0.13,<0.14" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "trl", marker = "extra == 'trl'", specifier = ">=1.17" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.30" },
 ]
-provides-extras = ["server", "runner", "ui", "trl"]
+provides-extras = ["server", "ui", "trl"]
 
 [package.metadata.requires-dev]
 dev = [
