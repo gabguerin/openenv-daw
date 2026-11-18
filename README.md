@@ -29,8 +29,8 @@ and reward update.*
   seed gives the same task and the same state hash.
 - **Verifiable rewards.** Every task has checks and an oracle solution that scores 1.0, so a
   reward bug shows up as a failing test.
-- **Ready for RL and SFT.** A TRL environment, a rollout runner, SFT export and a 242-task
-  held-out benchmark are included.
+- **Ready for RL and SFT.** A TRL environment and a 242-task held-out benchmark are
+  included.
 
 ## Try it in 60 seconds
 
@@ -119,42 +119,11 @@ Difficulty tags `L1` to `L3`. Train tasks are generated from seeds; the held-out
 `metadata["success"]` is binary and about correctness only.
 Details: [docs/design.md](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md#scoring).
 
-## Evaluate and train
+## Train with TRL
 
-```bash
-uv sync --all-extras
-uv run pytest
-uv run python -m openenv_daw.training eval --tasks heldout --policy oracle   # ceiling
-uv run python -m openenv_daw.training eval --tasks heldout --policy noop     # floors: noop, submit_only, blocked, random
-uv run python -m openenv_daw.training eval --tasks heldout --policy openai --samples 4 --out outputs/m
-```
-
-`eval` writes `results.jsonl`, `report.json` and `report.md`: success with a 95% interval, mean
-reward and musicality, pass@k, breakdowns by family and tag, and calls against oracle length.
-
-**Collect rollouts, SFT, then GRPO** (the OpenEnv
-[Collect Rollouts for SFT](https://huggingface.co/docs/openenv/tutorials/sft-warmup) pipeline):
-
-```bash
-uv sync --extra runner --extra trl
-export OPENAI_API_KEY=...
-# 1. teacher rollouts: results.jsonl + metadata.json, resumable, optionally pushed to the Hub
-uv run python -m openenv_daw.training collect --provider openai --model gpt-5-mini -n 300 \
-    -o rollouts [--push-to-hub <you>/daw-rollouts]
-#    self-hosted teacher: --llm-endpoint http://localhost:8000 --model Qwen/Qwen3-8B
-# 2. filter by the environment's verdict into chat rows {messages, tools, reward, task_id}
-uv run python -m openenv_daw.training export rollouts -o sft.jsonl
-# 3. SFT warm-up (format compliance), then GRPO from the checkpoint
-uv run python examples/sft_warmup.py --data sft.jsonl --model Qwen/Qwen3-1.7B
-uv run python examples/grpo_train.py --model runs/daw-sft
-```
-
-`openenv collect` itself only knows `openspiel` and `reasoning_gym`; `openenv_daw.training.harness` is this
-environment's session factory (`DawSessionFactory`) on the same OpenEnv harness. `export` keeps
-successful, musical episodes (musicality of at least 0.6), deduplicated by task and action sequence.
-`DawToolEnv` is a TRL `environment_factory` class built from the same tool registry (reward from
-`get_reward`), and tool schemas and tool results match the collected data. It runs the simulator
-in-process, so it trains at simulator speed.
+`openenv_daw.trl_env.DawToolEnv` is a TRL `environment_factory` class built from the same tool
+registry (reward from `get_reward`), and `build_dataset` makes its prompts from the train or
+held-out split. It runs the simulator in-process, so it trains at simulator speed.
 
 | Path | steps/s (Apple M-series) |
 |---|---|
@@ -184,7 +153,7 @@ on `openenv-base` with dependencies from `uv.lock`. To use a deployed Space from
 
 - [Design](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md): simulator, sounds and
   plugins, foreign objects, task families, scoring details.
-- [Writing an adapter](https://github.com/gabguerin/openenv-daw/blob/main/docs/writing-an-adapter.md):
+- [Writing an adapter](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md#writing-an-adapter):
   drive your own DAW with the same tools (implement `Driver`, describe devices in a `DeviceMap`,
   pass `assert_driver_conformance`). The adapter API is provisional until a second driver exists.
 - [CHANGELOG](https://github.com/gabguerin/openenv-daw/blob/main/CHANGELOG.md).

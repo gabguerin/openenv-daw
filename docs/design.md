@@ -6,8 +6,9 @@ How `openenv-daw` is built. For a quick start see the [README](../README.md).
 
 The package follows the `openenv init` layout: `models.py`, `client.py`, `openenv.yaml` at the root
 and the environment under `server/` (`app.py`, `daw_environment.py`, `Dockerfile`). Everything else
-is optional tooling: `adapters/` (adapter SDK), `training/` (harness, TRL, SFT export), `examples/`
-and `scripts/`.
+is optional tooling: `adapters/` (adapter SDK), `trl_env.py` (the TRL `environment_factory`
+class), `cli.py` (`openenv-daw mcp`) and `scripts/`. Rollout collection, SFT export and evaluation
+live in `ableton-sidekick`.
 
 ## Tools
 
@@ -71,7 +72,41 @@ Efficiency (`calls`, `oracle_len`, `read_first`) is reported on the score, never
 
 ## Bringing your own DAW (adapter SDK)
 
-`openenv_daw.adapters` lets any DAW be trained against and driven by the same tools. See
-[writing-an-adapter.md](writing-an-adapter.md). `MirrorBackend` re-reads the DAW on every call,
+`openenv_daw.adapters` lets any DAW be trained against and driven by the same tools (see
+"Writing an adapter" below). `MirrorBackend` re-reads the DAW on every call,
 dry-runs the edit on the simulator, diffs the result and has the driver apply it. Adapters never
 add tools. Destructive loading requires the `__openenv_scratch__` marker track.
+
+## Portable contract
+
+- **Tools**: `get_session`, `set_transport`, `create_track`, `delete_track`, `rename_track`,
+  `create_midi_clip`, `delete_clip`, `update_midi_clip`, `insert_midi_notes`, `remove_midi_notes`,
+  `set_mixer_channel`, `set_send`, `list_devices`, `insert_device`, `delete_device`, `get_device_params`,
+  `set_device_param`, plus `submit` in the training environment only. Adapters never add tools.
+  `list_devices(query=)` searches the canonical library of presets, kits, racks and plugins and
+  `insert_device` takes a catalog or library id, so an agent never handles DAW paths or URIs.
+- **Session**: `trk_`, `clp_` and `dev_` ids, dB volumes, normalized 0..1 device parameters,
+  `Device.preset`, read-only foreign devices (`fdv_`, with `item`/`role` for loaded racks and
+  plugins) and clips.
+- **Library** (`server/sim/library.yaml`): entries are `preset` (built on a catalog device,
+  editable), `rack` or `plugin` (read-only). Adapters map ids in their `DeviceMap` `library:`
+  section.
+- **Errors**: `not_found`, `invalid_args`, `conflict`, `unsupported`, `execution_error`.
+- **Changes**: a change to the tools, the Session schema or `server/instructions.md` is listed under
+  `Unreleased` in `CHANGELOG.md`. `openenv_daw.adapters` stays provisional until a second driver exists.
+
+## Writing an adapter
+
+1. Implement `Driver` (`openenv_daw.adapters`): `read()` (project without notes; object ids are the
+   DAW's own stable keys), `read_notes(clip)`, `apply(changes, ids)` (atomic, raise `DriverError` on failure; bind every created
+   object with `ids.bind(canonical_id, native_key)`), `close()`.
+2. Describe devices in a `DeviceMap` YAML (`native` name, per-parameter `native`, optional
+   `min`/`max`, or `unsupported`).
+3. Wrap it: `MirrorBackend(driver, device_map)`.
+4. Run `assert_driver_conformance(make_driver, tasks, device_map=...)` over the held-out tasks and a few
+   train samples; `FakeDriver` in `openenv_daw.adapters.testing` is a complete worked example.
+5. Register a factory `make_backend()` under the `openenv_daw.backends` entry point group;
+   serve with `openenv-daw mcp --backend NAME`.
+
+Destructive loading (replacing the whole project, needed for benchmarks) is refused unless the
+project contains a track named `__openenv_scratch__` and you pass `allow_destructive_load=True`.

@@ -132,7 +132,7 @@ def test_unseeded_reset_varies_and_reports_seed():
 def test_stratified_heldout_prefix_covers_every_family():
     from openenv_daw.server.tasks.generators import families
     from openenv_daw.server.tasks.store import default_store
-    from openenv_daw.training.trl_env import build_dataset
+    from openenv_daw.trl_env import build_dataset
 
     rows = build_dataset("heldout", len(families()), stratified=True)
     got = {r["task_id"].split("-", 1)[0] for r in rows}
@@ -147,3 +147,20 @@ def test_heldout_has_at_least_15_tasks_per_family():
 
     counts = Counter(t.family for t in load_heldout())
     assert min(counts.values()) >= 15
+
+
+def test_degenerate_policies_stay_under_the_reward_floor():
+    """noop, submit-only and always-blocked score at most ``validation.reward.floor_margin``."""
+    from openenv_daw.server.episode import Episode
+
+    floor = 0.1  # openenv.yaml validation.reward.floor_margin
+    feasible = [t for t in default_store().heldout if t.expected_status == "done"]
+    assert feasible
+    for steps in ([], [("submit", {"status": "done"})], [("submit", {"status": "blocked"})]):
+        for t in feasible:
+            ep = Episode(t)
+            for tool, args in steps:
+                ep.run(tool, args)
+            if not ep.done:
+                ep.finalize(True, "no_submit")
+            assert ep.score is not None and ep.score.reward <= floor, (t.task_id, steps)

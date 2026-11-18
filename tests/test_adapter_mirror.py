@@ -89,7 +89,7 @@ def test_conformance_skips_tasks_the_device_map_does_not_cover():
 
 async def test_mcp_server_exposes_portable_tools_through_mirror():
     from fastmcp import Client
-    from openenv_daw.adapters.serve import make_server
+    from openenv_daw.cli import make_server
 
     d, m = mirror()
     server = make_server(m)

@@ -27,13 +27,17 @@ First release, not yet published. This section describes the current feature set
 - **Task families** `remove_device` and `clip_edit` exercise `delete_device` and `update_midi_clip`;
   the held-out set is 242 tasks (the first 212 are unchanged).
 - **Prompt**: the instructions ask for varied drum velocities and for deciding on `blocked` before
-  any edit. `export_sft` always writes the deployment prompt as the system message.
+  any edit. the SFT export always writes the deployment prompt as the system message.
 - **Scoring**: foreign-device parameters and float round-trip noise in device parameters do not
   count as damage or as a changed state.
-- **Harness**: `collect` (threaded, resumable rollouts on OpenEnv's harness), `teacher_client`,
-  scripted policies, SFT export, TRL environment and GRPO example.
+- **Training**: `openenv_daw.trl_env` (`DawToolEnv`, `build_dataset`, `tool_schemas`), a TRL
+  `environment_factory`. Rollout collection, SFT export and evaluation moved to `ableton-sidekick`
+  (`sidekick collect`, `sidekick eval`, `sidekick train export`), so the former
+  `openenv_daw.training` package, its CLI and the `runner` extra are gone.
 - **Adapters** (provisional): Change ops, `diff`/`apply_changes`, `Driver`, `IdMap`, `DeviceMap`,
   `MirrorBackend`, `FakeDriver` and conformance helpers in `adapters.testing`.
 - **Web UI and Space**: DAW Studio (`ui` extra), deployed to the Hugging Face Space on
   `cpu-basic`, image built on `openenv-base` from `uv.lock`.
+- **Layout**: task templates live in one `server/tasks/templates.yaml`; `openenv-daw mcp` is
+  served from `cli.py`.
 - **Discovery**: `discovery.json` for `openenv catalog build`, checked in CI.

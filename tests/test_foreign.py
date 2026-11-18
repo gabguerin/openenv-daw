@@ -16,7 +16,7 @@ from openenv_daw.server.sim.session import (
 )
 from openenv_daw.server.tasks.generators import families, generate
 from openenv_daw.server.tasks.store import default_store
-from openenv_daw.training.trl_env import make_environment_class
+from openenv_daw.trl_env import make_environment_class
 
 
 def foreign_task():

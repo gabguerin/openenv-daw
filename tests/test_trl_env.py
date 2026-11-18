@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("transformers")
 from openenv_daw.server.tools import build_server  # noqa: E402
-from openenv_daw.training.trl_env import DawToolEnv, build_dataset  # noqa: E402
+from openenv_daw.trl_env import DawToolEnv, build_dataset  # noqa: E402
 from transformers.utils import get_json_schema  # noqa: E402
 
 

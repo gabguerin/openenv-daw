@@ -52,12 +52,14 @@ Parts = dict[str, Any]
 
 
 @cache
-def load_family(family: str) -> dict[str, Any]:
-    text = (
-        resources.files("openenv_daw.server.tasks.templates").joinpath(f"{family}.yaml").read_text()
+def load_templates() -> dict[str, dict[str, Any]]:
+    return yaml.safe_load(
+        resources.files("openenv_daw.server.tasks").joinpath("templates.yaml").read_text()
     )
-    data = yaml.safe_load(text)
-    return data
+
+
+def load_family(family: str) -> dict[str, Any]:
+    return load_templates()[family]
 
 
 def families() -> dict[str, float]:

@@ -1,0 +1,275 @@
+# Task families: slot pools and intent templates, keyed by family name.
+
+chord_progression:
+  weight: 0.08
+  slots:
+    key:
+      train: ["C major", "A minor", "G major", "D minor", "F major", "E minor"]
+      heldout: ["Bb major", "F# minor", "Eb major", "B minor"]
+    prog_major:
+      train: ["I-V-vi-IV", "I-IV-V-I", "ii-V-I-I"]
+      heldout: ["I-vi-IV-V", "vi-IV-I-V", "I-iii-IV-V-I-V", "vi-IV-I"]
+    prog_minor:
+      train: ["i-VI-III-VII", "i-iv-V-i", "i-VII-VI-VII"]
+      heldout: ["i-iv-v-i", "i-VI-iv-V-i-VII", "VI-III-VII"]
+    track: {train: [Chords, Keys, Pad], heldout: [Harmony, Organ, Comp]}
+  templates:
+    - {id: t1, split: train, text: "Create a MIDI track called {track} with a simple_synth and play the chord progression {prog} in {key}: one block triad per bar, {bars} bars, starting at bar 1."}
+    - {id: t2, split: train, text: "On a new {track} track (simple_synth) write a {bars}-bar progression in {key} using the roman numerals {prog}, one triad held for each bar from the start."}
+    - {id: h1, split: heldout, text: "Add an instrument track named {track} loaded with simple_synth, then lay down {prog} in {key}: a sustained three-note chord per bar over {bars} bars, from bar 1."}
+    - {id: h2, split: heldout, text: "New MIDI track {track} with simple_synth. Program the progression {prog} ({key}) as whole-bar triads, {bars} bars long."}
+
+clip_edit:
+  weight: 0.07
+  # Variants follow the placeholders: {name} renames, {bar} moves, {ebars} extends, {sbars} shortens.
+  # The track starts with one 16-beat clip named Idea (eight notes, beats 0..7).
+  slots:
+    track: {train: [Lead, Keys, Melody], heldout: [Arp, Topline]}
+    name: {train: [Verse, Hook, Intro], heldout: [Bridge, Outro]}
+    bar: {train: [3, 5], heldout: [2, 4]}
+    ebars: {train: [6, 8], heldout: [5, 7]}
+    sbars: {train: [1, 2], heldout: [1, 2]}
+  templates:
+    - {id: t1, split: train, text: "Rename the clip on {track} to {name}. Keep it where it is and keep its notes."}
+    - {id: t2, split: train, text: "Move the clip on {track} so it starts at bar {bar} (bar 1 is the start of the project). Do not change its notes."}
+    - {id: t3, split: train, text: "Make the clip on {track} {ebars} bars long, without changing its start or its notes."}
+    - {id: t4, split: train, text: "Shorten the clip on {track} to {sbars} bar(s) (4 beats per bar). Notes that no longer fit are dropped, the others stay."}
+    - {id: h1, split: heldout, text: "Call the clip on {track} {name}; it should stay in place with its notes."}
+    - {id: h2, split: heldout, text: "Shift the clip on {track} to bar {bar} (counting the first bar as 1), notes untouched."}
+    - {id: h3, split: heldout, text: "Stretch the clip on {track} to {ebars} bars; it keeps its start and notes."}
+    - {id: h4, split: heldout, text: "Trim the clip on {track} down to {sbars} bar(s) of 4 beats; drop notes that fall outside and keep the rest."}
+
+compositional:
+  weight: 0.12
+  # Chains of families that need no initial session. Train sees these combinations; heldout uses
+  # other pairs and triples, so it measures composing skills in unseen combinations. If a part is
+  # infeasible the whole task is blocked.
+  combos:
+    train:
+      - [session_setup, melody_in_key]
+      - [session_setup, four_on_floor_beat]
+      - [melody_in_key, infeasible]
+    heldout:
+      - [melody_in_key, four_on_floor_beat]
+      - [four_on_floor_beat, infeasible]
+      - [session_setup, melody_in_key, four_on_floor_beat]
+      - [melody_in_key, four_on_floor_beat, infeasible]
+
+device_tweak:
+  weight: 0.08
+  slots:
+    track: {train: [Lead, Bass, Vocals, Pad], heldout: [Keys, Strings, Horns]}
+    setting:
+      train:
+        - "simple_synth|cutoff|2000|2 kHz"
+        - "simple_synth|attack|100|100 ms"
+        - "compressor|ratio|4|4:1"
+        - "reverb|decay|2|2 seconds"
+        - "delay|time|250|250 ms"
+        - "eq|mid_gain|-6|-6 dB"
+      heldout:
+        - "simple_synth|release|1000|1 second"
+        - "compressor|threshold|-24|-24 dB"
+        - "delay|feedback|50|50%"
+        - "limiter|ceiling|-3|-3 dB"
+        - "eq|mid_freq|1000|1 kHz"
+  templates:
+    - {id: t1, split: train, text: "The {track} track has the {device} device on it. Set its {param} to {text}. The display value must be within 5% of the target."}
+    - {id: t2, split: train, text: "Tweak the {device} on {track}: {param} should read {text} (within 5%)."}
+    - {id: h1, split: heldout, text: "Dial the {param} of {track}'s {device} to {text}; getting within 5% of that display value is enough."}
+    - {id: h2, split: heldout, text: "On {track}, find the {device} and make its {param} {text} (a display value within 5% passes)."}
+
+disambiguation:
+  weight: 0.06
+  slots:
+    names: {train: [Drums, Bass, Lead, Pad, Vocals], heldout: [Keys, Strings, Perc]}
+    pitch: {train: [C4, E4, G4], heldout: [D4, A4]}
+  templates:
+    - {id: t1, split: train, text: "Both {a} and {b} contain a clip named Loop. Delete the Loop clip on {b} only."}
+    - {id: t2, split: train, text: "{a} and {b} each have a clip called Loop. Add one {pitch} note at the very start of the Loop clip on {b} (and nothing on {a})."}
+    - {id: h1, split: heldout, text: "There are two clips named Loop, one on {a} and one on {b}. Remove the one on {b} and keep the other."}
+    - {id: h2, split: heldout, text: "Put a single {pitch} note on beat 0 of {b}'s Loop clip; {a} also has a Loop clip, which must stay empty."}
+
+edit_notes:
+  weight: 0.08
+  slots:
+    track: {train: [Lead, Keys, Melody], heldout: [Arp, Topline]}
+    pitch: {train: [E4, G4, A4], heldout: [D4, B4, F4]}
+    add: {train: [C5, E5, G4], heldout: [D5, A4, B4]}
+    beat: {train: [8, 10], heldout: [12, 14]}
+  templates:
+    - {id: t1, split: train, text: "The {track} track already has a one-octave C major idea in its clip. Transpose every note up one octave and keep everything else as it is."}
+    - {id: t2, split: train, text: "On {track}, remove every {pitch} from the existing clip. Leave the other notes alone."}
+    - {id: t3, split: train, text: "Add a single {add} note to the clip on {track}, starting at beat {beat} (counting from 0). Keep all existing notes."}
+    - {id: h1, split: heldout, text: "Shift the whole phrase on {track} up by an octave (12 semitones); nothing else should change."}
+    - {id: h2, split: heldout, text: "Delete all {pitch} notes from the clip on {track} but keep the rest of the phrase."}
+    - {id: h3, split: heldout, text: "Extend the phrase on {track} with one {add} note placed at beat {beat} (first beat is 0); the existing notes must stay."}
+
+four_on_floor_beat:
+  weight: 0.20
+  slots:
+    bars: {train: [1, 2, 4], heldout: [3, 5]}
+    track: {train: [Drums, Beat, Kit], heldout: [Percussion, Groove, Rhythm]}
+    hat_clause: {train: ["", ", and closed hats on every 8th note"], heldout: [" with closed hats on every 8th note", ""]}
+    bpm: {train: [120, 124, 128, 130], heldout: [122, 126]}
+  templates:
+    - {id: t1, split: train, text: "Create a drum track named {track} with a drum_kit and program a {bars}-bar four-on-the-floor beat: kick on every beat{hat_clause}. The clip must start at bar 1."}
+    - {id: t2, split: train, text: "Make a {bars}-bar house beat on a new drum_kit track called {track}. Kick on every beat{hat_clause}. Set the tempo to {bpm}. The clip must start at bar 1."}
+    - {id: h1, split: heldout, text: "Add a MIDI drum track {track} using drum_kit; the kick should hit on each quarter note for {bars} bars{hat_clause}. The clip must start at bar 1."}
+    - {id: h2, split: heldout, text: "Make me a {bars}-bar club groove on a new drum_kit track named {track}: kick on every quarter note{hat_clause}. Start the clip at bar 1."}
+    - {id: h3, split: heldout, text: "Program {bars} bars of four-to-the-floor drums on a drum_kit track called {track} (kick on each beat{hat_clause}), beginning at bar 1."}
+
+infeasible:
+  weight: 0.10
+  slots:
+    names: {train: [Drums, Bass, Lead, Pad, Vocals], heldout: [Keys, Strings, Perc]}
+    group: {train: [Rhythm, Instruments, Bus A], heldout: [Stems, Group 1]}
+    # plugins outside the library: they cannot be loaded, so the right answer is blocked
+    plugin: {train: [Massive, Kontakt, Omnisphere, Sylenth1], heldout: [Diva, Reaktor, Kontakt]}
+  templates:
+    - {id: t1, split: train, text: "Group the {a} and {b} tracks into a folder called {group}."}
+    - {id: t2, split: train, text: "Draw a filter cutoff automation on {a} that rises over 8 bars."}
+    - {id: t3, split: train, text: "Route the output of {a} to a bus called {group}."}
+    - {id: t4, split: train, text: "Load the {plugin} plugin on {a}."}
+    - {id: t5, split: train, text: "Export the whole project as a WAV file."}
+    - {id: h1, split: heldout, text: "Put {a} and {b} in a track group named {group}."}
+    - {id: h2, split: heldout, text: "Please open {plugin} on the {a} track."}
+    - {id: h3, split: heldout, text: "Automate the volume of {a} to fade out over the last 4 bars."}
+
+load_sound:
+  weight: 0.08
+  slots:
+    track: {train: [Lead, Bass, Pad, Keys, Arp], heldout: [Topline, Sub, Atmos]}
+    # library ids of presets and kits, named in the request
+    sound:
+      train: [sub_bass, robot_lead, warm_pad, perc_pluck, electric_keys, kit_808, kit_acoustic, hip_hop_bass, bright_lead, glass_pad]
+      heldout: [pixel_bass, soft_lead, string_pad, harp_pluck, fuzzy_keys, kit_thicket, kit_lofi, growl_bass, bell_keys]
+    # described, not named: "<tag the loaded sound must carry>|<phrase>|<id the oracle loads>"
+    style:
+      train:
+        - "bass|a bass sound|sub_bass"
+        - "lead|a bright lead sound|bright_lead"
+        - "pad|a warm pad|warm_pad"
+        - "pluck|a plucked sound|perc_pluck"
+        - "keys|an electric piano style keys sound|electric_keys"
+        - "808|an 808 drum kit|kit_808"
+      heldout:
+        - "bass|a heavy low end bass|growl_bass"
+        - "lead|a mellow lead|soft_lead"
+        - "pad|a lush string pad|string_pad"
+        - "keys|a bell-like keys sound|bell_keys"
+        - "lofi|a dusty lo-fi drum kit|kit_lofi"
+    rack:
+      train: [instrument_rack, audio_effect_rack]
+      heldout: [instrument_rack, mixing_chain]
+    # plugins in the library: loadable only with the third_party_plugin capability
+    plugin:
+      train: [serum, vital]
+      heldout: [pigments, serum]
+  templates:
+    - {id: t1, split: train, text: "Load {sound} on a new MIDI track called {track}."}
+    - {id: t2, split: train, text: "Create a MIDI track named {track} and give it the {sound} sound."}
+    - {id: t3, split: train, text: "I need {style} on a new MIDI track called {track}."}
+    - {id: t4, split: train, text: "Add an empty {rack} to a new MIDI track called {track}."}
+    - {id: t5, split: train, text: "Make a MIDI track called {track} and load the {plugin} plugin on it."}
+    - {id: h1, split: heldout, text: "New MIDI track {track}, with {sound} loaded on it."}
+    - {id: h2, split: heldout, text: "Set up {style} for me on a fresh MIDI track named {track}."}
+    - {id: h3, split: heldout, text: "On a new MIDI track {track}, put the {rack} on it."}
+    - {id: h4, split: heldout, text: "Open {plugin} on a new MIDI track called {track}."}
+
+melody_in_key:
+  weight: 0.25
+  slots:
+    key:
+      train: ["C major", "A minor", "G major", "D minor", "F major", "E minor"]
+      heldout: ["Bb major", "F# minor", "Eb major", "B minor", "Ab major"]
+    bars: {train: [1, 2, 4], heldout: [3, 8]}
+    track: {train: [Lead, Melody, Synth, Keys], heldout: [Arp, Topline, Pluck]}
+  templates:
+    - {id: t1, split: train, text: "Create a MIDI track called {track} with a simple_synth and write a {bars}-bar melody in {key}. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}
+    - {id: t2, split: train, text: "Add a synth lead named {track} (use simple_synth) playing a {bars}-bar melody that stays in {key}. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}
+    - {id: t3, split: train, critical: [notes_monophonic], text: "I want a {bars}-bar single-note melody in {key} on a new MIDI track {track}, with a simple_synth on it. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}
+    - {id: h1, split: heldout, text: "Put together a {key} tune, {bars} bars long, on a new instrument track named {track}. Use the simple_synth. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}
+    - {id: h2, split: heldout, critical: [notes_monophonic], text: "New MIDI track {track} + simple_synth, then a monophonic {bars}-bar melody using only notes from {key}. Keep every note between MIDI pitches 48 and 84, and start the clip at bar 1."}
+
+mix_balance:
+  weight: 0.10
+  slots:
+    names: {train: [Drums, Bass, Lead, Pad, Vocals], heldout: [Keys, Strings, Perc, Sub, Guitar]}
+    db_a: {train: [-18, -12, -9, -6, -3], heldout: [-15, -8, -4]}
+    side: {train: [left, right], heldout: [left, right]}
+  templates:
+    - {id: t1, split: train, text: "Set {track_a} to {db_a} dB, pan {pan_track} hard {side}, and mute {mute_track}."}
+    - {id: t2, split: train, text: "Turn {track_a} down to {db_a} dB and pan {pan_track} fully {side}."}
+    - {id: t3, split: train, text: "Mute {mute_track} and pan {pan_track} all the way {side}."}
+    - {id: h1, split: heldout, text: "Bring the level of {track_a} to {db_a} dB; also mute {mute_track} and pan {pan_track} hard {side}."}
+
+near_miss:
+  weight: 0.08
+  slots:
+    names: {train: [Drums, Bass, Lead, Pad, Vocals], heldout: [Keys, Strings, Perc]}
+    group: {train: [Rhythm, Instruments, Bus A], heldout: [Stems, Group 1]}
+    plugin: {train: [Serum, Massive, Kontakt, Omnisphere], heldout: [Vital, Pigments, Diva]}
+    db: {train: [-6, -9, -12], heldout: [-4, -15]}
+  templates:
+    - {id: t1, split: train, text: "Load a reverb on {a}."}
+    - {id: t2, split: train, text: "Mute {a} and {b}."}
+    - {id: t3, split: train, text: "Add a new MIDI track called {group}."}
+    - {id: t4, split: train, text: "Rename the {a} track to {plugin}."}
+    - {id: t5, split: train, text: "Set the volume of {a} to {db} dB (no automation, just a static level)."}
+    - {id: h1, split: heldout, text: "Please put a reverb on the {a} track."}
+    - {id: h2, split: heldout, text: "Silence {a} and {b}."}
+    - {id: h3, split: heldout, text: "Make a new MIDI track named {group}."}
+    - {id: h4, split: heldout, text: "Call the {a} track {plugin} from now on."}
+
+remove_device:
+  weight: 0.07
+  # Variants follow the placeholders: {new} replaces an effect, {b} removes it on one of two tracks,
+  # {rack} asks for something that cannot be removed (racks and plugins are read-only: blocked).
+  slots:
+    track: {train: [Lead, Bass, Pad, Vocals], heldout: [Keys, Strings, Horns]}
+    b: {train: [Drums, Guitar], heldout: [Perc, Organ]}
+    effect: {train: [reverb, delay, eq], heldout: [compressor, limiter, delay]}
+    new: {train: [compressor, limiter], heldout: [reverb, eq]}
+    rack: {train: [audio_effect_rack], heldout: [audio_effect_rack]}
+  templates:
+    - {id: t1, split: train, text: "The {track} track has a {effect} on it that I do not want. Remove it and keep the other devices."}
+    - {id: t2, split: train, text: "Take the {effect} off {track}; everything else on the track stays."}
+    - {id: t3, split: train, text: "On {track}, swap the {effect} for a {new}: remove the {effect} and add a {new}."}
+    - {id: t4, split: train, text: "Replace the {effect} on {track} with a {new} and leave the rest of the chain alone."}
+    - {id: t5, split: train, text: "Both {track} and {b} have a {effect}. Remove the {effect} from {b} only."}
+    - {id: t6, split: train, text: "Remove the {rack} from the {track} track."}
+    - {id: h1, split: heldout, text: "Get rid of the {effect} on {track}, but do not touch its other devices."}
+    - {id: h2, split: heldout, text: "I want {track} without its {effect}. Delete that device only."}
+    - {id: h3, split: heldout, text: "Exchange the {effect} on {track} for a {new} (remove the old one, add the new one)."}
+    - {id: h4, split: heldout, text: "{track} and {b} both carry a {effect}; delete the one on {b} and keep the one on {track}."}
+    - {id: h5, split: heldout, text: "Delete the {rack} sitting on {track}."}
+
+reverb_send:
+  weight: 0.15
+  slots:
+    names: {train: [Vocals, Guitar, Keys, Strings, Pad], heldout: [Piano, Horns, Choir]}
+    return_name: {train: [Reverb, Space, Hall], heldout: [Plate, Room]}
+    send_db: {train: [-12, -9, -6, -3], heldout: [-15, -10, -4]}
+    mix: {train: [20, 30, 40, 50], heldout: [25, 35, 45]}
+  templates:
+    - {id: t1, split: train, text: "Create a return track called {return_name} with a reverb on it, then send {source} to it at {send_db} dB."}
+    - {id: t2, split: train, text: "Add a reverb return named {return_name}. Send {source} to it at {send_db} dB and set the reverb mix to {mix}%."}
+    - {id: t3, split: train, text: "Give {source} some space: new return track {return_name} holding a reverb, send level {send_db} dB, reverb mix {mix}%."}
+    - {id: h1, split: heldout, text: "I'd like {source} to go through a reverb. Make a return called {return_name}, route {source} there at {send_db} dB, with the reverb mix at {mix}%."}
+
+session_setup:
+  weight: 0.20
+  slots:
+    bpm: {train: [90, 100, 110, 120, 128, 140], heldout: [85, 95, 105, 115, 125, 135]}
+    ts: {train: ["4/4", "3/4", "6/8"], heldout: ["5/4", "7/8", "2/4"]}
+    names:
+      train: [Drums, Bass, Lead, Pad, Vocals, Keys, Guitar]
+      heldout: [Kick, Sub, Arp, Strings, Piano, Perc, Pluck]
+  templates:
+    - {id: t1, split: train, text: "Set the tempo to {bpm} BPM and create MIDI tracks named {names}."}
+    - {id: t2, split: train, text: "Make the project {ts} at {bpm} BPM."}
+    - {id: t3, split: train, text: "I need MIDI tracks for {names}. Set the time signature to {ts} too."}
+    - {id: t4, split: train, text: "Set up a new session: {bpm} BPM, {ts}, with MIDI tracks {names}."}
+    - {id: h1, split: heldout, text: "Please change the tempo to {bpm} and add one MIDI track each for {names}."}
+    - {id: h2, split: heldout, text: "Switch the time signature to {ts} and set {bpm} beats per minute."}

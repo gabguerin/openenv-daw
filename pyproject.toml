@@ -14,7 +14,6 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["uvicorn>=0.30"]
-runner = ["openai>=1.40"]  # teacher clients; add `anthropic` for --provider anthropic
 ui = ["gradio[oauth]>=4"]  # the Space web UI
 trl = ["trl>=1.17", "datasets"]
 
@@ -41,10 +40,8 @@ packages = [
     "openenv_daw.server.sim",
     "openenv_daw.server.rewards",
     "openenv_daw.server.tasks",
-    "openenv_daw.server.tasks.templates",
     "openenv_daw.server.ui",
     "openenv_daw.adapters",
-    "openenv_daw.training",
 ]
 
 [tool.setuptools.package-dir]
@@ -53,17 +50,14 @@ openenv_daw = "."
 "openenv_daw.server.sim" = "server/sim"
 "openenv_daw.server.rewards" = "server/rewards"
 "openenv_daw.server.tasks" = "server/tasks"
-"openenv_daw.server.tasks.templates" = "server/tasks/templates"
 "openenv_daw.server.ui" = "server/ui"
 "openenv_daw.adapters" = "adapters"
-"openenv_daw.training" = "training"
 
 [tool.setuptools.package-data]
 "openenv_daw" = ["py.typed"]
 "openenv_daw.server" = ["instructions.md"]
 "openenv_daw.server.sim" = ["*.yaml"]
-"openenv_daw.server.tasks" = ["*.jsonl"]
-"openenv_daw.server.tasks.templates" = ["*.yaml"]
+"openenv_daw.server.tasks" = ["*.jsonl", "*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

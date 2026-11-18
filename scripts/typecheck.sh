@@ -6,4 +6,4 @@ pkg="$(cd "$(dirname "$0")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 ln -s "$pkg" "$tmp/openenv_daw"
-cd "$pkg" && MYPYPATH="$tmp" uv run mypy --explicit-package-bases -p openenv_daw.server -p openenv_daw.adapters -p openenv_daw.training -m openenv_daw.client -m openenv_daw.models -m openenv_daw.cli
+cd "$pkg" && MYPYPATH="$tmp" uv run mypy --explicit-package-bases -p openenv_daw.server -p openenv_daw.adapters -m openenv_daw.trl_env -m openenv_daw.client -m openenv_daw.models -m openenv_daw.cli
