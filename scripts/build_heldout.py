@@ -24,6 +24,8 @@ PER_FAMILY = {  # at least 15 per family, so per-family rates have a usable inte
     "disambiguation": 15,
     "compositional": 28,
     "load_sound": 15,
+    "remove_device": 15,
+    "clip_edit": 15,
 }
 
 

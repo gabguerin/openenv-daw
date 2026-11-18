@@ -128,3 +128,26 @@ def test_collect_records_version_and_commit_and_refuses_mixed_resume(tmp_path, m
         collect(factory, oracle, tasks, tmp_path)
     monkeypatch.setattr(harness, "_git_state", lambda: (None, None))
     collect(factory, oracle, tasks, tmp_path)  # no git: no check
+
+
+def test_export_replaces_the_teacher_prompt(tmp_path):
+    from openenv_daw.server.tools import load_instructions
+
+    d = tmp_path / "r"
+    d.mkdir()
+    msgs = [
+        {"role": "system", "content": "teacher-only hints"},
+        {"role": "user", "content": "hi"},
+    ]
+    row = {
+        "messages": msgs,
+        "reward": 1.0,
+        "extra": {},
+        "task": "a",
+        "verify_metrics": {"success": True, "actions": []},
+    }
+    (d / "results.jsonl").write_text(json.dumps(row))
+    export_sft(d, tmp_path / "sft.jsonl")
+    out = json.loads((tmp_path / "sft.jsonl").read_text())
+    assert out["messages"][0] == {"role": "system", "content": load_instructions()}
+    assert out["messages"][1:] == msgs[1:]

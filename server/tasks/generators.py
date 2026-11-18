@@ -75,6 +75,8 @@ def families() -> dict[str, float]:
         "disambiguation",
         "compositional",
         "load_sound",
+        "remove_device",
+        "clip_edit",
     ]
     return {n: float(load_family(n)["weight"]) for n in names}
 
@@ -794,6 +796,148 @@ def gen_load_sound(rng: random.Random, pool: dict[str, list[Any]], used: set[str
     }
 
 
+_FX = ["eq", "compressor", "reverb", "delay", "limiter"]
+
+
+def gen_remove_device(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+    """delete_device: remove one effect, swap it for another, remove it on one of two tracks, or
+    (blocked) remove a rack, which is read-only."""
+    track = rng.choice(pool["track"])
+
+    def chain(name: str, effects: list[str]) -> list[tuple[str, dict[str, Any]]]:
+        steps: list[tuple[str, dict[str, Any]]] = [
+            ("create_track", {"name": name, "kind": "midi"}),
+            ("insert_device", {"track": name, "device": "simple_synth"}),
+        ]
+        return steps + [("insert_device", {"track": name, "device": e}) for e in effects]
+
+    if "rack" in used:
+        item = load_library()[rng.choice(pool["rack"])]
+        initial = build_session(
+            [
+                *chain(track, rng.sample(_FX, 1))[:2],
+                ("insert_device", {"track": track, "device": item.id}),
+            ]
+        )
+        return {
+            "vals": {"track": track, "rack": item.name},
+            "checks": [],
+            "oracle": [],
+            "initial": initial,
+            "touchable": [],
+            "blocked": True,
+        }
+    effect = rng.choice(pool["effect"])
+    new = rng.choice(pool["new"]) if "new" in used else None
+    others = rng.sample([e for e in _FX if e not in (effect, new)], rng.randint(1, 2))
+    vals = {"track": track, "effect": effect}
+    keep = [
+        Check(kind="has_device", args={"track": track, "device": "simple_synth"}, critical=True)
+    ]
+    keep += [
+        Check(kind="has_device", args={"track": track, "device": e}, critical=True) for e in others
+    ]
+    checks = [Check(kind="device_absent", args={"track": track, "device": effect}, critical=True)]
+    steps = chain(track, [effect, *others])
+    oracle = [_step("delete_device", track=track, device=effect)]
+    allowed: list[str] = []
+    if new is not None:
+        vals["new"] = new
+        checks.append(Check(kind="has_device", args={"track": track, "device": new}, critical=True))
+        oracle.append(_step("insert_device", track=track, device=new))
+        allowed = [f"device:{new}"]
+    if "b" in used:
+        other = rng.choice(pool["b"])
+        vals["b"] = other
+        steps += chain(other, [effect])
+        # the same effect must stay on the other track; the one on `other` is the one to remove
+        checks = [
+            Check(kind="device_absent", args={"track": other, "device": effect}, critical=True)
+        ]
+        keep = [
+            Check(kind="has_device", args={"track": track, "device": effect}, critical=True),
+            Check(
+                kind="has_device", args={"track": other, "device": "simple_synth"}, critical=True
+            ),
+        ] + [
+            Check(kind="has_device", args={"track": track, "device": e}, critical=True)
+            for e in others
+        ]
+        oracle = [_step("delete_device", track=other, device=effect)]
+        touch = [f"track:{other}:devices"]
+    else:
+        touch = [f"track:{track}:devices"]
+    return {
+        "vals": vals,
+        "checks": checks + keep,
+        "oracle": oracle,
+        "initial": build_session(steps),
+        "touchable": touch,
+        "allowed_new": allowed,
+    }
+
+
+def gen_clip_edit(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+    """update_midi_clip: rename, move, extend or shorten the one clip of a track (clip id kept)."""
+    track = rng.choice(pool["track"])
+    initial = _idea_session(track)
+    n_notes = len(_IDEA_NOTES)
+    checks = [Check(kind="clip_kept", args={"track": track}, critical=True)]
+    vals: dict[str, str] = {"track": track}
+    start, length, name = 0.0, 16.0, "Idea"
+    update: dict[str, Any] = {}
+    oracle: list[OracleStep] = []
+    kept_before: float | None = None
+    if "name" in used:
+        name = rng.choice(pool["name"])
+        vals["name"] = name
+        update = {"name": name}
+    elif "bar" in used:
+        bar = rng.choice(pool["bar"])
+        vals["bar"] = str(bar)
+        start = 4.0 * (bar - 1)
+        update = {"start_beat": start}
+    elif "ebars" in used:
+        bars = rng.choice(pool["ebars"])
+        vals["ebars"] = str(bars)
+        length = 4.0 * bars
+        update = {"length_beats": length}
+    else:
+        bars = rng.choice(pool["sbars"])
+        vals["sbars"] = str(bars)
+        length = 4.0 * bars
+        update = {"length_beats": length}
+        if length < n_notes:  # notes starting at or after the new end must go first
+            kept_before = length
+            n_notes = int(length)
+            oracle.append(_step("remove_midi_notes", clip="Idea", start_beat=length))
+    oracle.append(_step("update_midi_clip", clip="Idea", **update))
+    checks += [
+        Check(
+            kind="clip_at",
+            args={"track": track, "start_beat": start, "length_beats": length},
+            critical=True,
+        ),
+        Check(
+            kind="clip_named",
+            args={"track": track, "start_beat": start, "name": name},
+            critical=True,
+        ),
+        Check(
+            kind="clip_notes_kept", args={"track": track, "before_beat": kept_before}, critical=True
+        ),
+        Check(kind="note_count_is", args={"track": track, "n": n_notes}, critical=True),
+        Check(kind="clip_count", args={"track": track, "n": 1}),
+    ]
+    return {
+        "vals": vals,
+        "checks": checks,
+        "oracle": oracle,
+        "initial": initial,
+        "touchable": [f"track:{track}:clips"],
+    }
+
+
 GENERATORS: dict[str, Callable[[random.Random, dict[str, list[Any]], set[str]], Parts]] = {
     "session_setup": gen_session_setup,
     "melody_in_key": gen_melody_in_key,
@@ -807,6 +951,8 @@ GENERATORS: dict[str, Callable[[random.Random, dict[str, list[Any]], set[str]], 
     "device_tweak": gen_device_tweak,
     "disambiguation": gen_disambiguation,
     "load_sound": gen_load_sound,
+    "remove_device": gen_remove_device,
+    "clip_edit": gen_clip_edit,
 }
 
 
@@ -847,7 +993,7 @@ def generate(
         tags=[difficulty(len(oracle) - 1)] + (["blocked"] if family == "infeasible" else []),
         expected_status="blocked" if family == "infeasible" else "done",
     )
-    return task
+    return blocked_form(task) if parts.get("blocked") else task
 
 
 def difficulty(n_calls: int, parts: int = 1) -> str:

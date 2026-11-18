@@ -1,0 +1,13 @@
+{
+  "plan_schema_version": "1",
+  "reset": {
+    "episode_id": "validate-0",
+    "seed": 0,
+    "options": {"task_id": "session_setup-heldout-0"}
+  },
+  "actions": [
+    {"type": "call_tool", "tool_name": "set_transport", "arguments": {"tempo_bpm": 135}},
+    {"type": "call_tool", "tool_name": "set_transport", "arguments": {"time_signature": [7, 8]}},
+    {"type": "call_tool", "tool_name": "submit", "arguments": {"status": "done"}}
+  ]
+}

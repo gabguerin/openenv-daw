@@ -29,7 +29,7 @@ and reward update.*
   seed gives the same task and the same state hash.
 - **Verifiable rewards.** Every task has checks and an oracle solution that scores 1.0, so a
   reward bug shows up as a failing test.
-- **Ready for RL and SFT.** A TRL environment, a rollout runner, SFT export and a 212-task
+- **Ready for RL and SFT.** A TRL environment, a rollout runner, SFT export and a 242-task
   held-out benchmark are included.
 
 ## Try it in 60 seconds
@@ -99,12 +99,13 @@ Tasks come in families, from simple to compositional:
 | `mix_balance` | Set Lead to -9 dB, pan Pad hard right, and mute Drums. |
 | `melody_in_key`, `chord_progression`, `four_on_floor_beat` | Musical writing, checked for key, harmony and rhythm. |
 | `edit_notes`, `device_tweak`, `reverb_send`, `load_sound` | Change existing material, tweak a device, add a send, load a described sound. |
+| `remove_device`, `clip_edit` | Remove or swap a device (racks and plugins cannot be removed); rename, move, resize or trim a clip. |
 | `disambiguation`, `near_miss` | Duplicate names; requests that only sound impossible. |
 | `compositional` | Chains of 2 to 3 of the above. |
 | `infeasible` | About 10% of tasks: the right answer is `submit("blocked")`. |
 
 Difficulty tags `L1` to `L3`. Train tasks are generated from seeds; the held-out set
-`heldout.jsonl` has 212 tasks with unseen templates and values.
+`heldout.jsonl` has 242 tasks with unseen templates and values.
 
 ## How scoring works
 

@@ -13,6 +13,12 @@ def _aspect(t: Track, aspect: str) -> Any:
     d = t.model_dump(mode="json")
     if aspect == "mixer":
         return {k: d[k] for k in ("name", "kind", "volume_db", "pan", "mute", "solo")}
+    if aspect == "devices":  # a DAW may round-trip normalized values with float noise
+        return [
+            {**x, "params": {k: round(v, 6) for k, v in x["params"].items()}} for x in d[aspect]
+        ]
+    if aspect == "foreign_devices":  # read-only; a DAW reports its own parameters for them
+        return [{k: v for k, v in f.items() if k != "params"} for f in d[aspect]]
     return d[aspect]
 
 

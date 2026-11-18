@@ -125,13 +125,23 @@ def test_update_midi_clip():
     assert call(b, "update_midi_clip", clip="A")["error"]["code"] == "invalid_args"
     r = call(b, "update_midi_clip", clip="A", name="Hook", start_beat=4.01, length_beats=2)
     assert r["ok"] and r["snapped"] and r["clip"]["start_beat"] == 4.0
-    assert call(b, "update_midi_clip", clip="Hook", start_beat=6, length_beats=4)["error"][
-        "code"
-    ] == "conflict"
-    assert call(b, "update_midi_clip", clip="Hook", start_beat=-1)["error"]["code"] == "invalid_args"
+    assert (
+        call(b, "update_midi_clip", clip="Hook", start_beat=6, length_beats=4)["error"]["code"]
+        == "conflict"
+    )
+    assert (
+        call(b, "update_midi_clip", clip="Hook", start_beat=-1)["error"]["code"] == "invalid_args"
+    )
     assert call(b, "update_midi_clip", clip="Hook", name=" ")["error"]["code"] == "invalid_args"
-    assert call(b, "update_midi_clip", clip="Hook", length_beats=0)["error"]["code"] == "invalid_args"
-    call(b, "insert_midi_notes", clip="Hook", notes=[{"pitch": 60, "start_beat": 1, "duration_beats": 1}])
+    assert (
+        call(b, "update_midi_clip", clip="Hook", length_beats=0)["error"]["code"] == "invalid_args"
+    )
+    call(
+        b,
+        "insert_midi_notes",
+        clip="Hook",
+        notes=[{"pitch": 60, "start_beat": 1, "duration_beats": 1}],
+    )
     r = call(b, "update_midi_clip", clip="Hook", length_beats=1.5)
     assert r["error"]["code"] == "invalid_args" and "Remove the notes" in r["error"]["message"]
     assert call(b, "update_midi_clip", clip="Hook", length_beats=2)["ok"]

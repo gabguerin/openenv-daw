@@ -14,10 +14,20 @@ from openenv_daw.training.harness import read_results
 MIN_MUSICALITY = 0.6  # musical tasks: a correct but unmusical episode is not worth imitating
 
 
+def _with_system(messages: list[dict[str, Any]], system: str) -> list[dict[str, Any]]:
+    """Rows always carry the deployment prompt, whatever the teacher was given."""
+    if messages and messages[0].get("role") == "system":
+        return [{**messages[0], "content": system}, *messages[1:]]
+    return [{"role": "system", "content": system}, *messages]
+
+
 def export_sft(
     rollouts: Path | Iterable[Path], out: Path, min_musicality: float = MIN_MUSICALITY
 ) -> dict[str, int]:
+    from openenv_daw.server.tools import load_instructions
     from openenv_daw.training.trl_env import tool_schemas
+
+    system = load_instructions()
 
     dirs = [rollouts] if isinstance(rollouts, Path) else list(rollouts)
     seen: set[str] = set()
@@ -41,7 +51,7 @@ def export_sft(
                 f.write(
                     json.dumps(
                         {
-                            "messages": rec["messages"],
+                            "messages": _with_system(rec["messages"], system),
                             "tools": json.dumps(list(tool_schemas())),
                             "reward": rec["reward"],
                             "task_id": rec["task"],

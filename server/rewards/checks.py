@@ -359,6 +359,46 @@ def existing_notes_kept_except(s, i, a):
 
 
 @check
+def device_absent(s, i, a):
+    """The track exists and holds no device with catalog id ``device``."""
+    t = _track(s, a["track"])
+    return t is not None and all(d.device != a["device"] for d in t.devices)
+
+
+@check
+def clip_kept(s, i, a):
+    """Every clip the track had initially still exists under the same id (it was edited with
+    update_midi_clip, not deleted and recreated)."""
+    t, t0 = _track(s, a["track"]), _track(i, a["track"])
+    if t is None or t0 is None:
+        return False
+    return {c.id for c in t0.clips} <= {c.id for c in t.clips}
+
+
+@check
+def clip_notes_kept(s, i, a):
+    """Each initial clip holds exactly its initial notes (clip-relative), restricted to notes
+    starting before ``before_beat`` when given: nothing lost, nothing added."""
+    t, t0 = _track(s, a["track"]), _track(i, a["track"])
+    if t is None or t0 is None:
+        return False
+    limit = a.get("before_beat")
+    now = {c.id: c for c in t.clips}
+    for c0 in t0.clips:
+        c = now.get(c0.id)
+        if c is None:
+            return False
+        want = sorted(
+            (n.pitch, n.start_beat, n.duration_beats, n.velocity)
+            for n in c0.notes
+            if limit is None or n.start_beat < limit
+        )
+        if sorted((n.pitch, n.start_beat, n.duration_beats, n.velocity) for n in c.notes) != want:
+            return False
+    return True
+
+
+@check
 def volume_in(s, i, a):
     t = _track(s, a["track"])
     return t is not None and a["min"] <= t.volume_db <= a["max"]
@@ -401,9 +441,19 @@ def send_in(s, i, a):
     return a["min"] <= t.sends.get(r.id, -70.0) <= a["max"]
 
 
+def _comparable(s: Session) -> dict[str, Any]:
+    """A snapshot without the parameters of foreign devices: they are read-only, and a DAW reports
+    its own set for a rack or plugin (for example "Device On"), so they say nothing about edits."""
+    snap = s.snapshot()
+    for t in snap.get("tracks", []):
+        for d in t.get("foreign_devices", []):
+            d["params"] = []
+    return snap
+
+
 @check
 def state_unchanged(s, i, a):
-    return s.snapshot() == i.snapshot()
+    return _comparable(s) == _comparable(i)
 
 
 def run_check(kind: str, session: Session, initial: Session, args: dict[str, Any]) -> bool:

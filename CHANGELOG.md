@@ -24,6 +24,12 @@ First release, not yet published. This section describes the current feature set
 - **Tasks**: train and held-out splits (`server/tasks/heldout.jsonl`), families including chord
   progressions, note edits, device tweaks, sound loading, disambiguation and compositional tasks,
   with difficulty tags.
+- **Task families** `remove_device` and `clip_edit` exercise `delete_device` and `update_midi_clip`;
+  the held-out set is 242 tasks (the first 212 are unchanged).
+- **Prompt**: the instructions ask for varied drum velocities and for deciding on `blocked` before
+  any edit. `export_sft` always writes the deployment prompt as the system message.
+- **Scoring**: foreign-device parameters and float round-trip noise in device parameters do not
+  count as damage or as a changed state.
 - **Harness**: `collect` (threaded, resumable rollouts on OpenEnv's harness), `teacher_client`,
   scripted policies, SFT export, TRL environment and GRPO example.
 - **Adapters** (provisional): Change ops, `diff`/`apply_changes`, `Driver`, `IdMap`, `DeviceMap`,

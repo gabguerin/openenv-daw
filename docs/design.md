@@ -45,11 +45,12 @@ and changing them is scored as damage.
 
 Seeded families: `session_setup`, `melody_in_key`, `four_on_floor_beat`, `reverb_send`,
 `mix_balance`, `chord_progression`, `edit_notes`, `device_tweak`, `disambiguation`, `load_sound`,
+`remove_device` (delete_device; removing a rack or plugin is blocked), `clip_edit` (update_midi_clip),
 `compositional` (chains of 2-3 families; an infeasible part blocks the whole task), `near_miss`
 (feasible requests that sound impossible) and about 10% infeasible requests
 (`submit("blocked")`). Tasks carry difficulty tags `L1` to `L3` and an oracle solution.
 
-Train tasks are generated from seeds. `server/tasks/heldout.jsonl` (212 tasks) is the held-out set
+Train tasks are generated from seeds. `server/tasks/heldout.jsonl` (242 tasks) is the held-out set
 and uses unseen templates and slot values. Rebuild it with `scripts/build_heldout.py`.
 
 ## Scoring

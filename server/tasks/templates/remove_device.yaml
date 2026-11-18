@@ -1,0 +1,22 @@
+family: remove_device
+weight: 0.07
+# Variants follow the placeholders: {new} replaces an effect, {b} removes it on one of two tracks,
+# {rack} asks for something that cannot be removed (racks and plugins are read-only: blocked).
+slots:
+  track: {train: [Lead, Bass, Pad, Vocals], heldout: [Keys, Strings, Horns]}
+  b: {train: [Drums, Guitar], heldout: [Perc, Organ]}
+  effect: {train: [reverb, delay, eq], heldout: [compressor, limiter, delay]}
+  new: {train: [compressor, limiter], heldout: [reverb, eq]}
+  rack: {train: [audio_effect_rack], heldout: [audio_effect_rack]}
+templates:
+  - {id: t1, split: train, text: "The {track} track has a {effect} on it that I do not want. Remove it and keep the other devices."}
+  - {id: t2, split: train, text: "Take the {effect} off {track}; everything else on the track stays."}
+  - {id: t3, split: train, text: "On {track}, swap the {effect} for a {new}: remove the {effect} and add a {new}."}
+  - {id: t4, split: train, text: "Replace the {effect} on {track} with a {new} and leave the rest of the chain alone."}
+  - {id: t5, split: train, text: "Both {track} and {b} have a {effect}. Remove the {effect} from {b} only."}
+  - {id: t6, split: train, text: "Remove the {rack} from the {track} track."}
+  - {id: h1, split: heldout, text: "Get rid of the {effect} on {track}, but do not touch its other devices."}
+  - {id: h2, split: heldout, text: "I want {track} without its {effect}. Delete that device only."}
+  - {id: h3, split: heldout, text: "Exchange the {effect} on {track} for a {new} (remove the old one, add the new one)."}
+  - {id: h4, split: heldout, text: "{track} and {b} both carry a {effect}; delete the one on {b} and keep the one on {track}."}
+  - {id: h5, split: heldout, text: "Delete the {rack} sitting on {track}."}
