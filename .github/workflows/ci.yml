@@ -13,6 +13,7 @@ jobs:
       - run: uv run ruff check .
       - run: scripts/typecheck.sh
       - run: uv run pytest
+      - run: uv run openenv validate . --level static --skip-build
 
   image:
     runs-on: ubuntu-latest
@@ -26,3 +27,14 @@ jobs:
           file: server/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: false
+      - name: Build a local image
+        run: docker build -f server/Dockerfile -t openenv-daw .
+      - name: Probe it as a non-root user on a read-only filesystem
+        run: |
+          docker run -d --name daw --user 65532:65532 --read-only --tmpfs /tmp --cap-drop ALL \
+            -p 8000:8000 openenv-daw
+          for i in $(seq 30); do curl -sf localhost:8000/health && break; sleep 2; done
+          curl -sf localhost:8000/openenv_daw/splits
+          pip install -q "openenv>=0.13,<0.14"
+          openenv validate --url http://localhost:8000
+          docker logs daw

@@ -39,8 +39,10 @@ parameters; racks and plugins load read-only.
 ## Foreign objects
 
 A Session can hold read-only group tracks, foreign plugins and audio clips (what an adapter reports
-for things the simulator does not model). They are readable, any mutation returns `unsupported`,
-and changing them is scored as damage.
+for things the simulator does not model). They are readable, and editing their contents (clips,
+parameters, mixer, name) returns `unsupported`. `delete_track` is not blocked on a group track, but
+deleting or changing one is scored as damage (reward 0). Loading a rack or plugin the task did not
+ask for counts as an extra object.
 
 ## Tasks
 

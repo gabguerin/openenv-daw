@@ -3,7 +3,8 @@ name = "openenv-daw"
 version = "0.1.0.dev0"
 description = "OpenEnv environment for DAW tool use: a lightweight JSON DAW simulator behind a portable MCP tool set"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "openenv>=0.13,<0.14",
@@ -22,6 +23,12 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "mypy>=1.10", "types-py
 
 [project.entry-points."openenv_daw.backends"]
 sim = "openenv_daw.server.backends:SimBackend"
+
+[project.urls]
+Homepage = "https://github.com/gabguerin/openenv-daw"
+Repository = "https://github.com/gabguerin/openenv-daw"
+Documentation = "https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md"
+Space = "https://huggingface.co/spaces/gabguerin/openenv-daw"
 
 [project.scripts]
 server = "openenv_daw.server.app:main"
@@ -66,7 +73,6 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = "-q --import-mode=importlib"
 
 [tool.ruff]
-extend-exclude = ["examples"]
 line-length = 100
 target-version = "py312"
 src = [".", "tests"]

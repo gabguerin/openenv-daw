@@ -4,10 +4,18 @@ emoji: 🎹
 colorFrom: indigo
 colorTo: purple
 sdk: docker
+pinned: false
 app_port: 8000
 base_path: /web
+short_description: Portable MCP DAW environment for training music agents
+license: apache-2.0
 tags:
   - openenv
+  - rl-environment
+  - mcp
+  - tool-use
+  - music
+  - reinforcement-learning
 ---
 
 # openenv-daw
@@ -66,13 +74,17 @@ pip install openenv-daw
 from openenv_daw.client import DawEnv
 
 with DawEnv(base_url="http://localhost:8000").sync() as env:
-    r = env.reset(split="train", seed=3)
-    print(r.observation.intent)  # the request, as plain text
+    r = env.reset(task_id="mix_balance-train-0")  # or split="train", seed=0
+    print(r.observation.intent)  # "Turn Lead down to -3 dB and pan Pad fully right."
     env.call("get_session")  # the agent must look at the project first
-    env.call("create_track", name="Lead", kind="midi")
+    env.call("set_mixer_channel", track="Lead", volume_db=-3)
+    env.call("set_mixer_channel", track="Pad", pan=1.0)
     r = env.call("submit", status="done")
-    print(r.reward, r.observation.metadata["success"])
+    print(r.reward, r.observation.metadata["success"])  # 1.0 True
 ```
+
+Tasks are also listed over HTTP (the Task API): `env.list_splits()`, `env.num_tasks("heldout")` and
+`env.get_task_range("heldout", 0, 10)`, and `env.reset(split="heldout", index=12)` runs one of them.
 
 Use `async with DawEnv(...) as env:` and `await env.reset(...)` / `await env.call(...)` in async
 code. To start a deployed Space image locally: `DawEnv.from_env("<user>/openenv-daw")`.
@@ -125,11 +137,44 @@ Details: [docs/design.md](https://github.com/gabguerin/openenv-daw/blob/main/doc
 registry (reward from `get_reward`), and `build_dataset` makes its prompts from the train or
 held-out split. It runs the simulator in-process, so it trains at simulator speed.
 
+```python
+from trl import GRPOConfig, GRPOTrainer
+from datasets import Dataset
+from openenv_daw.trl_env import DawToolEnv, build_dataset
+
+trainer = GRPOTrainer(
+    model="Qwen/Qwen3-1.7B",
+    train_dataset=Dataset.from_list(build_dataset("train", n=512)),
+    environment_factory=DawToolEnv,  # tools and reward come from the environment
+    args=GRPOConfig(output_dir="daw-grpo", max_completion_length=2048),
+)
+trainer.train()
+```
+
 | Path | steps/s (Apple M-series) |
 |---|---|
 | Simulator ops only | ~22,000 |
 | Environment, in-process | ~240 |
 | Environment over WebSocket (Docker) | ~270 |
+
+## Benchmark and baselines
+
+The held-out split (`split="heldout"`, 242 tasks, 15 families, levels `L1` to `L3`) uses templates
+and values that never appear in `train`; 29 tasks (12%) are infeasible, so the right answer is
+`submit("blocked")`. Scripted policies bound the scale:
+
+| Policy | Success | Mean reward |
+|---|---|---|
+| Oracle (reference solution) | 242/242 | 1.000 |
+| Do nothing | 0/242 | 0.000 |
+| `submit("done")` without edits | 0/242 | 0.000 |
+| `submit("blocked")` always | 29/242 (12.0%) | 0.120 |
+
+No feasible task is solved by doing nothing, and every oracle scores 1.0. As a learned reference, a
+LoRA-SFT `LFM3-1.7B` student solved 102/212 (48.1%) of an earlier 212-task version of this split
+(95% CI 41.5% to 54.8%): near-perfect on `session_setup`, `near_miss` and `mix_balance`, but 0% on
+`melody_in_key` and `chord_progression`. Writing music is the open problem, which is where RL
+should help.
 
 ## Deploy and share
 
@@ -138,7 +183,7 @@ All with the `openenv` CLI:
 ```bash
 openenv validate --level static --skip-build        # fast manifest check
 openenv validate --level runtime                    # builds the image and runs the contract checks
-openenv validate http://localhost:8000              # probe a running server
+openenv validate --url http://localhost:8000        # probe a running server
 openenv push --repo-id <you>/openenv-daw --hardware cpu-basic --exclude .hfexclude
 openenv fork <owner>/openenv-daw                    # copy a deployed Space to your account
 ```

@@ -162,7 +162,7 @@ load_sound:
     rack:
       train: [instrument_rack, audio_effect_rack]
       heldout: [instrument_rack, mixing_chain]
-    # plugins in the library: loadable only with the third_party_plugin capability
+    # plugins in the library (read-only once loaded)
     plugin:
       train: [serum, vital]
       heldout: [pigments, serum]

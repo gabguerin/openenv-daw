@@ -24,6 +24,8 @@ validation:
   capabilities:
     verifier:
       kind: reward_channel
+    task_api: true
+    declared_task_count: {train: 4096, heldout: 242}
     declared_tools:
       - get_session
       - set_transport

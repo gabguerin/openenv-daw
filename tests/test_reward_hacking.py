@@ -305,3 +305,24 @@ def test_chord_numeral_case_sets_quality():
     assert roman_chord("G major", "VI") == [4, 8, 11]  # E major
     assert roman_chord("A minor", "V") == [4, 8, 11]  # E major
     assert roman_chord("A minor", "v") == [4, 7, 11]
+
+
+def test_unrequested_rack_or_plugin_is_extraneous():
+    """A library rack or plugin loads as a foreign device; it must not slip past the extras check."""
+    from openenv_daw.server.sim.catalog import find_item
+
+    def foreign(t: Task) -> bool:
+        ins = [o for o in t.oracle if o.tool == "insert_device"]
+        return bool(ins) and find_item(ins[0].args["device"]) is not None and not any(
+            o.args["device"] in ("simple_synth", "drum_kit") for o in ins
+        )
+
+    t = first("load_sound", foreign)
+    ep = Episode(t, max_steps=30, max_consecutive_errors=3)
+    for o in t.oracle[:-1]:
+        ep.run(o.tool, o.args)
+    track = next(o.args["name"] for o in t.oracle if o.tool == "create_track")
+    extra = "audio_effect_rack" if "audio_effect_rack" not in str(t.oracle) else "mixing_chain"
+    assert ep.run("insert_device", {"track": track, "device": extra})["ok"]
+    ep.run("submit", {"status": "done"})
+    assert ep.score.extraneous and not ep.score.success

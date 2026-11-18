@@ -26,6 +26,10 @@ from openenv_daw.server.rewards import DawRubric
 from openenv_daw.server.tasks.store import TaskStore, default_store
 from openenv_daw.server.tools import build_server
 
+SPLITS = ("train", "heldout")
+TRAIN_EPOCH = 4096  # advertised size of the generated train split (``reset(index=i)`` for i < 4096)
+TRAIN_PREVIEW = 64
+
 
 def result_data(obs: CallToolObservation) -> dict[str, Any] | None:
     """The tool's JSON dict result, if it returned one."""
@@ -161,6 +165,43 @@ class DawEnvironment(MCPEnvironment):
         return Observation(
             metadata={"error": f"unsupported action {type(action).__name__}; use CallToolAction"}
         )
+
+    # --- Task API: discovery only, no side effects -------------------------------------------
+    # ``train`` tasks are generated from seeds, so its size is the epoch size we advertise.
+
+    def list_splits(self) -> list[str]:
+        return list(SPLITS)
+
+    def num_tasks(self, split: str) -> int:
+        if split not in SPLITS:
+            raise ValueError(f"unknown split {split!r}; expected {list(SPLITS)}")
+        return TRAIN_EPOCH if split == "train" else len(self.store.heldout)
+
+    def get_task(self, split: str, index: int) -> dict[str, Any]:
+        n = self.num_tasks(split)
+        if not 0 <= index < n:
+            raise IndexError(f"index {index} out of range for split {split} (n={n})")
+        task = self.store.get_task(split, index)
+        return {
+            "id": task.task_id,
+            "index": index,
+            "split": split,
+            "family": task.family,
+            "intent": task.intent,
+        }
+
+    def get_task_range(
+        self, split: str, start: int | None = None, stop: int | None = None
+    ) -> list[dict[str, Any]]:
+        n = self.num_tasks(split)
+        lo = 0 if start is None else max(start, 0)
+        hi = n if stop is None else min(stop, n)
+        return [self.get_task(split, i) for i in range(lo, hi)]
+
+    def list_tasks(self, split: str) -> list[dict[str, Any]]:
+        """Every heldout task; a bounded preview of ``train`` (``num_tasks`` is the real size)."""
+        n = self.num_tasks(split)
+        return self.get_task_range(split, 0, n if split == "heldout" else min(n, TRAIN_PREVIEW))
 
     @property
     def state(self) -> DawState:

@@ -34,7 +34,7 @@ def test_oracle_scores_one_heldout():
     store = default_store()
     assert store.heldout
     for raw in store.heldout:
-        t = store.get(raw.task_id)  # stored profile-neutral, resolved for the env's profile
+        t = store.get(raw.task_id)  # resolve by id, as the environment does
         last = run_oracle(env, t)
         assert last.reward == 1.0 and last.metadata["success"], (t.intent, last.metadata["score"])
 

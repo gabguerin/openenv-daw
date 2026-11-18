@@ -13,6 +13,46 @@ def test_metadata_is_specific():
     assert m["documentation_url"]
 
 
+def test_task_api_routes():
+    assert client.get("/list_environments").json() == ["openenv_daw"]
+    splits = [s["name"] for s in client.get("/openenv_daw/splits").json()]
+    assert splits == ["train", "heldout"]
+    n = client.post("/openenv_daw/num_tasks", json={"split": "heldout"}).json()["num_tasks"]
+    assert n == 242
+    body = {"split": "heldout", "start": 0, "stop": 3}
+    tasks = client.post("/openenv_daw/task_range", json=body).json()["tasks"]
+    assert len(tasks) == 3 and tasks[0]["intent"]
+    bad = client.post("/openenv_daw/task", json={"split": "heldout", "index": 242})
+    assert bad.status_code == 400
+
+
+def test_task_api_matches_reset_index():
+    from openenv_daw.server.daw_environment import DawEnvironment
+
+    env = DawEnvironment()
+    for split in ("train", "heldout"):
+        spec = env.get_task(split, 5)
+        assert env.reset(split=split, index=5).task_id == spec["id"]
+
+
+def test_readme_quickstart_scores_one():
+    """The steps shown in the README quickstart."""
+    from openenv.core.env_server.mcp_types import CallToolAction
+    from openenv_daw.server.daw_environment import DawEnvironment
+
+    env = DawEnvironment()
+    env.reset(task_id="mix_balance-train-0")
+
+    def call(tool, **kw):
+        return env.step(CallToolAction(tool_name=tool, arguments=kw))
+
+    call("get_session")
+    call("set_mixer_channel", track="Lead", volume_db=-3)
+    call("set_mixer_channel", track="Pad", pan=1.0)
+    r = call("submit", status="done")
+    assert r.reward == 1.0 and r.metadata["success"] is True
+
+
 def test_runtime_plan_replays_to_full_reward():
     """`openenv validate` replays validation/runtime.json; it must load and solve its task."""
     from pathlib import Path

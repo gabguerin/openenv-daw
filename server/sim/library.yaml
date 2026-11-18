@@ -6,8 +6,7 @@
 # kind: preset  built on a catalog device (`base`); loads as that device with `overrides`
 #               (normalized 0..1) applied, so its parameters stay editable.
 #       rack    a native DAW rack or instrument without catalog parameters: loads read-only.
-#       plugin  a third-party plugin: loads read-only and needs the `third_party_plugin`
-#               capability (the default `portable` profile does not offer it).
+#       plugin  a third-party plugin: loads read-only.
 # waveform steps: saw 0.125, square 0.375, sine 0.625, triangle 0.875.
 items:
   # --- synth presets (simple_synth) -----------------------------------------------------------
@@ -212,7 +211,7 @@ items:
     role: audio_fx
     tags: [rack, effect, mixing, mastering, chain]
     params: [{name: Macro 1, display: "0 %"}, {name: Macro 2, display: "50 %"}]
-  # --- third-party plugins (read-only; need the third_party_plugin capability) -----------------
+  # --- third-party plugins (read-only) ---------------------------------------------------------
   serum:
     name: Serum
     kind: plugin

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import requests
 from openenv.core.client_types import StepResult
 from openenv.core.env_client import EnvClient
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 from openenv_daw.models import DawObservation, DawState
+
+ENV_NAME = "openenv_daw"  # the ``env_name`` given to ``create_app``
 
 
 def extract_data(result: Any) -> dict[str, Any] | None:
@@ -50,6 +53,30 @@ class DawEnv(EnvClient[CallToolAction, DawObservation, DawState]):
 
     def _parse_state(self, payload: dict[str, Any]) -> DawState:
         return DawState.model_validate(payload)
+
+    # Task API (plain HTTP, served next to the WebSocket session)
+
+    def _task_url(self, path: str) -> str:
+        base = self.base_url.replace("ws://", "http://", 1).replace("wss://", "https://", 1)
+        return f"{base.rstrip('/')}/{ENV_NAME}/{path}"
+
+    def list_splits(self) -> list[str]:
+        r = requests.get(self._task_url("splits"), timeout=30)
+        r.raise_for_status()
+        return [s["name"] for s in r.json()]
+
+    def num_tasks(self, split: str) -> int:
+        r = requests.post(self._task_url("num_tasks"), json={"split": split}, timeout=30)
+        r.raise_for_status()
+        return int(r.json()["num_tasks"])
+
+    def get_task_range(
+        self, split: str, start: int | None = None, stop: int | None = None
+    ) -> list[dict[str, Any]]:
+        body = {"split": split, "start": start, "stop": stop}
+        r = requests.post(self._task_url("task_range"), json=body, timeout=60)
+        r.raise_for_status()
+        return r.json()["tasks"]
 
     async def list_tools(self) -> list[dict[str, Any]]:
         res = await self.step(ListToolsAction())

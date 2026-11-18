@@ -780,8 +780,7 @@ def gen_load_sound(rng: random.Random, pool: dict[str, list[Any]], used: set[str
     else:
         match = {"item": item.id}
     allowed = [track]
-    if item.base:
-        allowed.append(f"device:{item.base}")
+    allowed.append(f"device:{item.base or item.id}")  # racks and plugins load as foreign devices
     return {
         "vals": vals,
         "checks": [

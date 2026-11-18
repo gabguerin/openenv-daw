@@ -91,4 +91,8 @@ def extraneous_violations(initial: Session, final: Session, task: Any) -> list[s
         for d in t.devices:
             if d.id not in known and f"device:{d.device}".lower() not in allowed:
                 out.append(f"extra device {d.device} on {t.name}")
+        known_foreign = {d.id for d in before.foreign_devices} if before else set()
+        for f in t.foreign_devices:  # racks and plugins loaded from the library
+            if f.id not in known_foreign and f"device:{f.item or f.name}".lower() not in allowed:
+                out.append(f"extra device {f.item or f.name} on {t.name}")
     return out

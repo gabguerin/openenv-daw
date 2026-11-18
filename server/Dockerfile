@@ -12,7 +12,11 @@ COPY . .
 # the package needs Python 3.12; uv fetches it when the base image has an older one
 RUN uv sync --frozen --no-dev --no-editable --extra server --extra ui --python 3.12
 
-ENV PATH="/app/.venv/bin:$PATH" MAX_CONCURRENT_ENVS=64 PORT=8000
+# Runs as any non-root user on a read-only root filesystem (`openenv validate`, HF Spaces): the
+# code and interpreters must be world-readable and every runtime write goes to /tmp.
+RUN chmod -R a+rX /app /opt/python
+ENV PATH="/app/.venv/bin:$PATH" MAX_CONCURRENT_ENVS=64 PORT=8000 \
+    HOME=/tmp TMPDIR=/tmp GRADIO_TEMP_DIR=/tmp/gradio
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
