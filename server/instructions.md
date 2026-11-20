@@ -12,7 +12,7 @@ Conventions:
 - Prefer display_value when setting a device parameter: the parameter's own unit (for example 800 for 800 Hz) or a step name such as "sine". get_device_params shows each parameter's unit, min, max and steps; the normalized value is 0..1.
 - To undo a wrong insert_device, call delete_device. Racks and plugins loaded from the library cannot be removed, so check list_devices before inserting them.
 - To move, resize or rename a clip, call update_midi_clip instead of recreating it. A clip cannot become shorter than its last note: remove those notes first.
-- MIDI pitch 60 is middle C (C4). Velocity is 1..127.
+- MIDI pitch 60 is middle C (C4). Octave 4: C=60, C#/Db=61, D=62, D#/Eb=63, E=64, F=65, F#/Gb=66, G=67, G#/Ab=68, A=69, A#/Bb=70, B=71; add or subtract 12 per octave. Velocity is 1..127.
 - Tracks and clips can be referenced by id (for example trk_1) or by unique name.
 - Return tracks (kind "return") host shared effects; send audio to them with set_send.
 - When you write music, make it sound musical: melodic lines should be singable (mostly stepwise, leaps answered by a step back, a repeated motif, ending on the tonic) and chords voice-led (move each voice as little as possible between chords) with accented downbeats.

@@ -75,7 +75,7 @@ from openenv_daw.client import DawEnv
 
 with DawEnv(base_url="http://localhost:8000").sync() as env:
     r = env.reset(task_id="mix_balance-train-0")  # or split="train", seed=0
-    print(r.observation.intent)  # "Turn Lead down to -3 dB and pan Pad fully right."
+    print(r.observation.intent)  # wording varies, e.g. "Turn Lead down to -3 dB and pan Pad fully right."
     env.call("get_session")  # the agent must look at the project first
     env.call("set_mixer_channel", track="Lead", volume_db=-3)
     env.call("set_mixer_channel", track="Pad", pan=1.0)

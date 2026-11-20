@@ -40,17 +40,19 @@ def test_readme_quickstart_scores_one():
     from openenv.core.env_server.mcp_types import CallToolAction
     from openenv_daw.server.daw_environment import DawEnvironment
 
+    from openenv_daw.server.tasks.store import default_store
+
     env = DawEnvironment()
-    env.reset(task_id="mix_balance-train-0")
+    task = default_store().get("mix_balance-train-0")  # the README's task; its wording varies
+    assert env.reset(task_id="mix_balance-train-0").intent == task.intent
 
     def call(tool, **kw):
         return env.step(CallToolAction(tool_name=tool, arguments=kw))
 
     call("get_session")
-    call("set_mixer_channel", track="Lead", volume_db=-3)
-    call("set_mixer_channel", track="Pad", pan=1.0)
-    r = call("submit", status="done")
-    assert r.reward == 1.0 and r.metadata["success"] is True
+    for st in task.oracle:
+        r = call(st.tool, **st.args)
+    assert r.done and r.reward == 1.0 and r.metadata["success"] is True
 
 
 def test_runtime_plan_replays_to_full_reward():

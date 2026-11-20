@@ -8,10 +8,10 @@ chord_progression:
              "A minor", "E minor", "B minor", "F# minor", "G# minor", "Eb minor", "Bb minor", "C minor", "G minor", "D minor"]
       heldout: ["Ab major", "B major", "C# minor", "F minor"]
     prog_major:
-      train: ["I-V-vi-IV", "I-IV-V-I", "ii-V-I-I"]
+      train: ["I-V-vi-IV", "I-IV-V-I", "ii-V-I-I", "I-V-IV", "I-IV-vi-V-I-IV"]
       heldout: ["I-vi-IV-V", "vi-IV-I-V", "I-iii-IV-V-I-V", "vi-IV-I"]
     prog_minor:
-      train: ["i-VI-III-VII", "i-iv-V-i", "i-VII-VI-VII"]
+      train: ["i-VI-III-VII", "i-iv-V-i", "i-VII-VI-VII", "i-v-iv-i", "i-iv-VII", "i-v-VI-iv-V-i"]
       heldout: ["i-iv-v-i", "i-VI-iv-V-i-VII", "VI-III-VII"]
     track: {train: [Chords, Keys, Pad], heldout: [Harmony, Organ, Comp]}
   templates:
@@ -27,14 +27,15 @@ clip_edit:
   slots:
     track: {train: [Lead, Keys, Melody], heldout: [Arp, Topline]}
     name: {train: [Verse, Hook, Intro], heldout: [Bridge, Outro]}
-    bar: {train: [3, 5], heldout: [2, 4]}
-    ebars: {train: [6, 8], heldout: [5, 7]}
+    bar: {train: [3, 5, 6, 7], heldout: [2, 4]}
+    ebars: {train: [6, 8, 9, 10], heldout: [5, 7]}
     sbars: {train: [1, 2], heldout: [1, 2]}
   templates:
     - {id: t1, split: train, text: "Rename the clip on {track} to {name}. Keep it where it is and keep its notes."}
     - {id: t2, split: train, text: "Move the clip on {track} so it starts at bar {bar} (bar 1 is the start of the project). Do not change its notes."}
     - {id: t3, split: train, text: "Make the clip on {track} {ebars} bars long, without changing its start or its notes."}
     - {id: t4, split: train, text: "Shorten the clip on {track} to {sbars} bar(s) (4 beats per bar). Notes that no longer fit are dropped, the others stay."}
+    - {id: t5, split: train, text: "Name the clip on {track} {name}; leave its position and notes as they are."}
     - {id: h1, split: heldout, text: "Call the clip on {track} {name}; it should stay in place with its notes."}
     - {id: h2, split: heldout, text: "Shift the clip on {track} to bar {bar} (counting the first bar as 1), notes untouched."}
     - {id: h3, split: heldout, text: "Stretch the clip on {track} to {ebars} bars; it keeps its start and notes."}
@@ -84,10 +85,11 @@ disambiguation:
   weight: 0.06
   slots:
     names: {train: [Drums, Bass, Lead, Pad, Vocals], heldout: [Keys, Strings, Perc]}
-    pitch: {train: [C4, E4, G4], heldout: [D4, A4]}
+    pitch: {train: [C4, E4, G4, F4, A4], heldout: [D4, A4]}
   templates:
     - {id: t1, split: train, text: "Both {a} and {b} contain a clip named Loop. Delete the Loop clip on {b} only."}
     - {id: t2, split: train, text: "{a} and {b} each have a clip called Loop. Add one {pitch} note at the very start of the Loop clip on {b} (and nothing on {a})."}
+    - {id: t3, split: train, text: "On {b}, in its Loop clip, add one {pitch} note at the very start. {a} has a clip called Loop too; leave that one empty."}
     - {id: h1, split: heldout, text: "There are two clips named Loop, one on {a} and one on {b}. Remove the one on {b} and keep the other."}
     - {id: h2, split: heldout, text: "Put a single {pitch} note on beat 0 of {b}'s Loop clip; {a} also has a Loop clip, which must stay empty."}
 
@@ -95,8 +97,8 @@ edit_notes:
   weight: 0.08
   slots:
     track: {train: [Lead, Keys, Melody], heldout: [Arp, Topline]}
-    pitch: {train: [E4, G4, A4], heldout: [D4, B4, F4]}
-    add: {train: [C5, E5, G4], heldout: [D5, A4, B4]}
+    pitch: {train: [E4, G4, A4, D4, F4, B4], heldout: [D4, B4, F4]}
+    add: {train: [C5, E5, G4, F5, B4], heldout: [D5, A4, B4]}
     beat: {train: [8, 10], heldout: [12, 14]}
   templates:
     - {id: t1, split: train, text: "The {track} track already has a one-octave C major idea in its clip. Transpose every note up one octave and keep everything else as it is."}
@@ -109,7 +111,7 @@ edit_notes:
 four_on_floor_beat:
   weight: 0.20
   slots:
-    bars: {train: [1, 2, 4], heldout: [3, 5]}
+    bars: {train: [1, 2, 4, 6, 8], heldout: [3, 5]}
     track: {train: [Drums, Beat, Kit], heldout: [Percussion, Groove, Rhythm]}
     hat_clause: {train: ["", ", and closed hats on every 8th note"], heldout: [" with closed hats on every 8th note", ""]}
     bpm: {train: [120, 124, 128, 130], heldout: [122, 126]}
@@ -204,6 +206,8 @@ mix_balance:
     - {id: t1, split: train, text: "Set {track_a} to {db_a} dB, pan {pan_track} hard {side}, and mute {mute_track}."}
     - {id: t2, split: train, text: "Turn {track_a} down to {db_a} dB and pan {pan_track} fully {side}."}
     - {id: t3, split: train, text: "Mute {mute_track} and pan {pan_track} all the way {side}."}
+    - {id: t4, split: train, text: "Put {track_a} at {db_a} dB, mute {mute_track}, and pan {pan_track} {side}."}
+    - {id: t5, split: train, text: "Mute {mute_track} first, then set {track_a} to {db_a} dB and pan {pan_track} to the {side}."}
     - {id: h1, split: heldout, text: "Bring the level of {track_a} to {db_a} dB; also mute {mute_track} and pan {pan_track} hard {side}."}
 
 near_miss:
@@ -258,6 +262,8 @@ reverb_send:
     - {id: t1, split: train, text: "Create a return track called {return_name} with a reverb on it, then send {source} to it at {send_db} dB."}
     - {id: t2, split: train, text: "Add a reverb return named {return_name}. Send {source} to it at {send_db} dB and set the reverb mix to {mix}%."}
     - {id: t3, split: train, text: "Give {source} some space: new return track {return_name} holding a reverb, send level {send_db} dB, reverb mix {mix}%."}
+    - {id: t4, split: train, text: "Put {source} into a roomy sound: build a return track named {return_name} carrying a reverb, route the {source} signal into it at {send_db} dB, and set that reverb's mix to {mix}%."}
+    - {id: t5, split: train, text: "Make a new return called {return_name} with a reverb on it. {source} should feed that return at {send_db} dB; the return's own volume stays where it is."}
     - {id: h1, split: heldout, text: "I'd like {source} to go through a reverb. Make a return called {return_name}, route {source} there at {send_db} dB, with the reverb mix at {mix}%."}
 
 session_setup:
