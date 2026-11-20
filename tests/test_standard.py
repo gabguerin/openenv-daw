@@ -39,7 +39,6 @@ def test_readme_quickstart_scores_one():
     """The steps shown in the README quickstart."""
     from openenv.core.env_server.mcp_types import CallToolAction
     from openenv_daw.server.daw_environment import DawEnvironment
-
     from openenv_daw.server.tasks.store import default_store
 
     env = DawEnvironment()
