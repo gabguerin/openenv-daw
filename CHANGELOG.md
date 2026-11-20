@@ -26,6 +26,12 @@ First release, not yet published. This section describes the current feature set
   with difficulty tags.
 - **Task families** `remove_device` and `clip_edit` exercise `delete_device` and `update_midi_clip`;
   the held-out set is 242 tasks (the first 212 are unchanged).
+- **Held-out v9**: train and held-out share all 24 keys; `compositional` tasks carry a meter that
+  sets clip lengths; plugin requests call `list_devices` before `blocked`; `instructions.md` states
+  scale and roman-numeral semitone conventions and that instrument tracks are `kind="midi"`.
+- **Shaped GRPO reward**: `DawRubric(shaped=True)` adds `PartialProgress` (capped at 0.5, never above
+  the full reward), so tasks the model never passes still yield a graded training signal. Eval keeps
+  the strict reward.
 - **Held-out v8**: the key pools of `chord_progression` and `melody_in_key` are rebalanced. Train
   covers 20 keys, including sharps and flats; held-out keeps four unseen keys (`Ab major`,
   `B major`, `C# minor`, `F minor`). The melody, chord and compositional held-out tasks are

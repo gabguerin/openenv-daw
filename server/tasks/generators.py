@@ -38,7 +38,7 @@ def blocked_form(task: Task) -> Task:
         update={
             "expected_status": "blocked",
             "checks": [Check(kind="state_unchanged", critical=True)],
-            "oracle": [SUBMIT_BLOCKED_STEP],
+            "oracle": [*(s for s in task.oracle if s.tool == "list_devices"), SUBMIT_BLOCKED_STEP],
             "touchable": [],
             "allowed_new": [],
             "music": [],
@@ -154,8 +154,39 @@ _RHYTHM_CELLS = [
 ]
 _CLOSING_CELLS = [[1.0, 1.0, 2.0], [1.0, 0.5, 0.5, 2.0], [0.5, 0.5, 1.0, 2.0]]
 
+# Rhythm and closing cells (each sums to the bar) for bars that are not 4 beats long.
+_METER_CELLS: dict[float, tuple[list[list[float]], list[list[float]]]] = {
+    2.0: (
+        [[1.0, 1.0], [0.5, 0.5, 1.0], [1.0, 0.5, 0.5], [1.5, 0.5]],
+        [[1.0, 1.0], [0.5, 0.5, 1.0]],
+    ),
+    3.0: (
+        [[1.0, 1.0, 1.0], [1.5, 0.5, 1.0], [1.0, 0.5, 0.5, 1.0], [2.0, 1.0], [1.0, 2.0]],
+        [[1.0, 2.0], [1.0, 0.5, 1.5], [0.5, 0.5, 2.0]],
+    ),
+    3.5: (
+        [[1.0, 1.0, 1.0, 0.5], [1.5, 0.5, 1.0, 0.5], [1.0, 1.0, 1.5], [0.5, 0.5, 1.0, 1.5]],
+        [[1.0, 1.0, 1.5], [1.0, 0.5, 0.5, 1.5]],
+    ),
+    5.0: (
+        [[1.0] * 5, [1.5, 0.5, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 2.0], [2.0, 1.0, 1.0, 1.0]],
+        [[1.0, 1.0, 1.0, 2.0], [1.0, 0.5, 0.5, 1.0, 2.0], [2.0, 1.0, 2.0]],
+    ),
+}
 
-def compose_melody(rng: random.Random, key: str, bars: int) -> list[dict[str, Any]]:
+
+def meter_cells(bar_beats: float) -> tuple[list[list[float]], list[list[float]]]:
+    """Rhythm cells and closing cells for a bar of ``bar_beats`` beats (4/4 keeps the originals)."""
+    if bar_beats == 4.0:
+        return _RHYTHM_CELLS, _CLOSING_CELLS
+    if bar_beats in _METER_CELLS:
+        return _METER_CELLS[bar_beats]
+    raise ValueError(f"no rhythm cells for a bar of {bar_beats} beats")
+
+
+def compose_melody(
+    rng: random.Random, key: str, bars: int, bar_beats: float = 4.0
+) -> list[dict[str, Any]]:
     """A short, singable line in ``key``: a one-bar motif that returns (transposed by scale
     steps) across the bars, mostly stepwise, leaps answered by a step back, a held tonic at the
     end. The best of several seeded candidates by the musicality heuristics is kept."""
@@ -165,10 +196,11 @@ def compose_melody(rng: random.Random, key: str, bars: int) -> list[dict[str, An
     tonic = root_pc(key.split()[0])
     tonics = [i for i, p in enumerate(sp) if p % 12 == tonic and 60 <= p <= 72]
     best: tuple[float, list[dict[str, Any]]] = (-1.0, [])
+    rhythm_cells, closing_cells = meter_cells(bar_beats)
     for _ in range(40):
-        motif_cell = rng.choice(_RHYTHM_CELLS)
-        answer_cell = rng.choice(_RHYTHM_CELLS)
-        closing = rng.choice(_CLOSING_CELLS)
+        motif_cell = rng.choice(rhythm_cells)
+        answer_cell = rng.choice(rhythm_cells)
+        closing = rng.choice(closing_cells)
         steps = [rng.choice([1, 1, -1, -1, 2, -2, 3, -3]) for _ in motif_cell[:-1]]
         for k, st in enumerate(steps[:-1]):  # a leap is answered by a step the other way
             if abs(st) >= 3:
@@ -186,7 +218,7 @@ def compose_melody(rng: random.Random, key: str, bars: int) -> list[dict[str, An
                 if last and j == len(cell) - 1:
                     i = min(tonics, key=lambda t: abs(t - idx))
                 p = sp[i]
-                vel = 100 if abs(beat % 4) < 1e-6 else 88
+                vel = 100 if abs(beat % bar_beats) < 1e-6 else 88
                 notes.append({"pitch": p, "start_beat": beat, "duration_beats": d, "velocity": vel})
                 beat += d
                 step = steps[j % len(steps)] if steps else 1
@@ -206,23 +238,27 @@ def compose_melody(rng: random.Random, key: str, bars: int) -> list[dict[str, An
     return best[1]
 
 
-def gen_melody_in_key(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+def gen_melody_in_key(
+    rng: random.Random, pool: dict[str, list[Any]], used: set[str], bar_beats: float = 4.0
+) -> Parts:
     key, bars, track = rng.choice(pool["key"]), rng.choice(pool["bars"]), rng.choice(pool["track"])
-    length = bars * 4
-    notes = compose_melody(rng, key, bars)
+    length: float = bars * bar_beats
+    if length.is_integer():
+        length = int(length)  # keep 4/4 oracles (and SFT text) as they were: 16, not 16.0
+    notes = compose_melody(rng, key, bars, bar_beats)
     checks = [
         Check(kind="track_exists", args={"track": track, "kind": "midi"}, critical=True),
         Check(kind="has_device", args={"track": track, "device": "simple_synth"}, critical=True),
         Check(kind="notes_in_key", args={"track": track, "key": key}, critical=True),
         Check(kind="distinct_pitches_at_least", args={"track": track, "n": 3}, critical=True),
-        Check(kind="notes_span", args={"track": track, "bar_beats": 4.0}, critical=True),
+        Check(kind="notes_span", args={"track": track, "bar_beats": bar_beats}, critical=True),
         Check(
             kind="clip_at",
             args={"track": track, "start_beat": 0.0, "length_beats": float(length)},
             critical=True,
         ),
-        Check(kind="notes_every_bar", args={"track": track, "bar_beats": 4.0}, critical=True),
-        Check(kind="note_count_at_least", args={"track": track, "n": max(2, length // 2)}),
+        Check(kind="notes_every_bar", args={"track": track, "bar_beats": bar_beats}, critical=True),
+        Check(kind="note_count_at_least", args={"track": track, "n": max(2, int(length // 2))}),
         Check(kind="notes_monophonic", args={"track": track}),
         Check(
             kind="notes_pitch_range",
@@ -241,15 +277,19 @@ def gen_melody_in_key(rng: random.Random, pool: dict[str, list[Any]], used: set[
         "checks": checks,
         "oracle": oracle,
         "touchable": [],
-        "music": [MusicSpec(kind="melody", track=track, key=key)],
+        "music": [MusicSpec(kind="melody", track=track, key=key, bar_beats=bar_beats)],
         "allowed_new": [track, "device:simple_synth", f"clip:{track}:1"],
     }
 
 
-def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[str]) -> Parts:
+def gen_four_on_floor(
+    rng: random.Random, pool: dict[str, list[Any]], used: set[str], bar_beats: float = 4.0
+) -> Parts:
+    if bar_beats % 1:
+        raise ValueError("a quarter-note kick needs a bar of whole beats")
     bars, track = rng.choice(pool["bars"]), rng.choice(pool["track"])
     clause = rng.choice(pool["hat_clause"]) if "hat_clause" in used else ""
-    length = bars * 4
+    length = int(bars * bar_beats)
     kicks = [float(b) for b in range(length)]
     hats = [i * 0.5 for i in range(length * 2)]
     notes = [
@@ -257,7 +297,7 @@ def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[
             "pitch": KICK,
             "start_beat": b,
             "duration_beats": 0.25,
-            "velocity": 115 if b % 4 == 0 else 100,
+            "velocity": 115 if b % bar_beats == 0 else 100,
         }
         for b in kicks
     ]
@@ -326,7 +366,7 @@ def gen_four_on_floor(rng: random.Random, pool: dict[str, list[Any]], used: set[
         "checks": checks,
         "oracle": oracle,
         "touchable": touch,
-        "music": [MusicSpec(kind="drums", track=track)],
+        "music": [MusicSpec(kind="drums", track=track, bar_beats=bar_beats)],
         "allowed_new": [track, "device:drum_kit", f"clip:{track}:1"],
     }
 
@@ -492,7 +532,8 @@ def gen_infeasible(rng: random.Random, pool: dict[str, list[Any]], used: set[str
     return {
         "vals": vals,
         "checks": [Check(kind="state_unchanged", critical=True)],
-        "oracle": [],
+        # a plugin request is refused after looking it up in the library (read-only)
+        "oracle": [_step("list_devices", query=vals["plugin"])] if "plugin" in used else [],
         "initial": initial,
         "touchable": [],
     }
@@ -921,7 +962,7 @@ def gen_clip_edit(rng: random.Random, pool: dict[str, list[Any]], used: set[str]
         ),
         Check(
             kind="clip_named",
-            args={"track": track, "start_beat": start, "name": name},
+            args={"track": track, "name": name},
             critical=True,
         ),
         Check(
@@ -979,7 +1020,7 @@ def generate(
             c.critical = True
     oracle = parts["oracle"] + [SUBMIT_DONE]
     if family == "infeasible":
-        oracle = [SUBMIT_BLOCKED_STEP]
+        oracle = parts["oracle"] + [SUBMIT_BLOCKED_STEP]
     task = Task(
         task_id=f"{family}-{split}-{seed}",
         family=family,
@@ -1003,6 +1044,20 @@ def difficulty(n_calls: int, parts: int = 1) -> str:
 
 
 _SIMPLE = ("session_setup", "melody_in_key", "four_on_floor_beat")  # need no initial session
+
+
+_METERED = ("melody_in_key", "four_on_floor_beat")  # generators that take the bar length
+
+
+def _bar_beats(parts_list: list[Parts]) -> float:
+    """Beats per bar after the time signature the parts so far set (4/4 when none)."""
+    bar = 4.0
+    for p in parts_list:
+        for o in p["oracle"]:
+            if o.tool == "set_transport" and "time_signature" in o.args:
+                num, den = o.args["time_signature"]
+                bar = num * 4.0 / den
+    return bar
 
 
 def _name_conflict(parts_list: list[Parts]) -> bool:
@@ -1032,17 +1087,25 @@ def _generate_compositional(seed: int, split: Literal["train", "heldout"]) -> Ta
     combo: list[str] = rng.choice(data["combos"][split])
     for attempt in range(200):
         sub = random.Random(f"compositional:{split}:{seed}:{attempt}")
-        picked, parts_list = [], []
+        picked: list[tuple[str, dict[str, Any], Parts]] = []
+        parts_list: list[Parts] = []
         for fam in combo:
             fdata = load_family(fam)
             tpl = sub.choice([t for t in fdata["templates"] if t["split"] == split])
             used = set(PLACEHOLDER.findall(tpl["text"]))
             pool = {k: v[split] for k, v in fdata["slots"].items()}
-            parts = GENERATORS[fam](sub, pool, used)
+            bar_beats = _bar_beats(parts_list)
+            if fam in _METERED:
+                if fam == "four_on_floor_beat" and bar_beats % 1:
+                    break  # a quarter-note kick does not divide this bar: draw again
+                parts = GENERATORS[fam](sub, pool, used, bar_beats=bar_beats)  # type: ignore[call-arg]
+            else:
+                parts = GENERATORS[fam](sub, pool, used)
             picked.append((fam, tpl, parts))
             parts_list.append(parts)
-        if not _name_conflict(parts_list):
-            break
+        else:
+            if not _name_conflict(parts_list):
+                break
     else:
         raise RuntimeError(f"no conflict-free composition for seed {seed}")
     intent = " ".join(t["text"].format(**p["vals"]) for _, t, p in picked)

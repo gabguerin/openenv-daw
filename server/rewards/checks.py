@@ -281,7 +281,8 @@ def existing_notes_kept(s, i, a):
 def clip_named(s, i, a):
     t = _track(s, a["track"])
     return t is not None and any(
-        abs(c.start_beat - a["start_beat"]) < 1e-6 and c.name.lower() == a["name"].lower()
+        (a.get("start_beat") is None or abs(c.start_beat - a["start_beat"]) < 1e-6)
+        and c.name.lower() == a["name"].lower()
         for c in t.clips
     )
 
@@ -454,6 +455,59 @@ def _comparable(s: Session) -> dict[str, Any]:
 @check
 def state_unchanged(s, i, a):
     return _comparable(s) == _comparable(i)
+
+
+def _progress_notes_in_key(s: Session, a: dict[str, Any]) -> float:
+    t = _track(s, a["track"])
+    ns = _notes(t) if t else []
+    ok = set(scale_classes(a["key"]))
+    return sum(n.pitch % 12 in ok for n in ns) / len(ns) if ns else 0.0
+
+
+def _progress_hits_on_beats(s: Session, a: dict[str, Any]) -> float:
+    t = _track(s, a["track"])
+    if t is None or not a["beats"]:
+        return 0.0
+    starts = [b for b, n in _abs_notes(t) if n.pitch == a["pitch"]]
+    tol = a.get("tol", 1e-6)
+    return sum(any(abs(b - x) <= tol for x in starts) for b in a["beats"]) / len(a["beats"])
+
+
+def _progress_chord_progression(s: Session, a: dict[str, Any]) -> float:
+    """Share of the bars whose notes are the numeral's triad, struck together and held."""
+    t = _track(s, a["track"])
+    if t is None or not a["numerals"]:
+        return 0.0
+    bar, spread = a.get("bar_beats", 4.0), a.get("spread", 0.25)
+    notes = _abs_notes(t)
+    base = a.get("start_beat", min((c.start_beat for c in t.clips), default=0.0))
+    good = 0
+    for k, num in enumerate(a["numerals"]):
+        lo, hi = base + k * bar - 1e-6, base + (k + 1) * bar - 1e-6
+        win = [(b, n) for b, n in notes if lo <= b < hi]
+        good += (
+            len(win) >= 3
+            and {n.pitch % 12 for _, n in win} == chord_pitch_classes(a["key"], num)
+            and max(b for b, _ in win) - min(b for b, _ in win) <= spread + 1e-6
+            and all(n.duration_beats >= bar / 2 - 1e-6 for _, n in win)
+        )
+    return good / len(a["numerals"])
+
+
+PROGRESS: dict[str, Callable[[Session, dict[str, Any]], float]] = {
+    "notes_in_key": _progress_notes_in_key,
+    "hits_on_beats": _progress_hits_on_beats,
+    "chord_progression": _progress_chord_progression,
+}
+
+
+def check_progress(kind: str, session: Session, initial: Session, args: dict[str, Any]) -> float:
+    """1.0 for a passing check; for a failing one, a share in [0, 1) when the check has a graded
+    form (the bars of a progression, the notes in key, the beats hit), else 0.0."""
+    if run_check(kind, session, initial, args):
+        return 1.0
+    fn = PROGRESS.get(kind)
+    return min(fn(session, args), 0.999) if fn else 0.0
 
 
 def run_check(kind: str, session: Session, initial: Session, args: dict[str, Any]) -> bool:

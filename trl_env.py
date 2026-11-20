@@ -20,6 +20,7 @@ from typing import Any, get_args, get_origin
 from openenv.core.env_server.mcp_environment import get_server_tools
 from openenv_daw.server.backends import Backend, SimBackend
 from openenv_daw.server.episode import MAX_CONSECUTIVE_ERRORS, MAX_STEPS, Episode
+from openenv_daw.server.rewards import DawRubric
 from openenv_daw.server.tasks.store import TaskStore, default_store
 from openenv_daw.server.tools import NoteIn, build_server, load_instructions
 
@@ -95,8 +96,10 @@ def make_environment_class(
     max_steps: int = MAX_STEPS,
     max_consecutive_errors: int = MAX_CONSECUTIVE_ERRORS,
     backend_factory: Callable[[], Backend] | None = None,
+    shaped: bool = False,
 ) -> type:
-    """Build an ``environment_factory`` class exposing every tool (plus submit)."""
+    """Build an ``environment_factory`` class exposing every tool (plus submit). ``shaped`` scores
+    with the dense training reward (``DawRubric(shaped=True)``) instead of the strict one."""
     template = build_server(lambda: SimBackend(), on_submit=lambda s, r: {})
     tools = get_server_tools(template)
 
@@ -110,7 +113,13 @@ def make_environment_class(
                 task = self.store.get(task_id)
             else:  # no task given: sample by seed (a process-wide counter when none is passed)
                 task = self.store.sample("train", next(_SEEDS) if seed is None else seed)
-            self.episode = Episode(task, max_steps, max_consecutive_errors, backend_factory)
+            self.episode = Episode(
+                task,
+                max_steps,
+                max_consecutive_errors,
+                backend_factory,
+                DawRubric(shaped=True) if shaped else None,
+            )
 
         def get_reward(self) -> float:
             ep = self.episode

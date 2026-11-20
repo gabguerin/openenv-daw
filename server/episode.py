@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from openenv_daw.server.backends import Backend, SimBackend
-from openenv_daw.server.rewards.score import EpisodeScore, score_episode
+from openenv_daw.server.rewards.score import DawRubric, EpisodeScore, score_episode
 from openenv_daw.server.sim.session import Session
 from openenv_daw.server.tasks.model import Task
 
@@ -24,8 +24,10 @@ class Episode:
         max_steps: int = MAX_STEPS,
         max_consecutive_errors: int = MAX_CONSECUTIVE_ERRORS,
         backend_factory: Callable[[], Backend] | None = None,
+        rubric: DawRubric | None = None,
     ) -> None:
         self.task = task
+        self.rubric = rubric
         self.max_steps, self.max_consecutive_errors = max_steps, max_consecutive_errors
         self.initial = Session.restore(task.initial_state) if task.initial_state else Session()
         self.backend: Backend = (backend_factory or SimBackend)()
@@ -107,6 +109,7 @@ class Episode:
             truncated,
             calls=len(steps),
             read_first=read_first,
+            rubric=self.rubric,
         )
         self.done, self.termination = True, why
         return why

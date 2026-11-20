@@ -69,3 +69,42 @@ def test_shorten_without_dropping_notes_is_an_error():
     ep = Episode(t, 60, 5)
     r = ep.run("update_midi_clip", {"clip": "Idea", "length_beats": 4})
     assert r["ok"] is False
+
+
+def _bar_beats(task):
+    ts = [o.args["time_signature"] for o in task.oracle if o.args.get("time_signature")]
+    return ts[-1][0] * 4.0 / ts[-1][1] if ts else 4.0
+
+
+@pytest.mark.parametrize("split", ["train", "heldout"])
+def test_compositional_bars_follow_the_time_signature(split):
+    seen = set()
+    for seed in range(120):
+        t = generate("compositional", seed, split)
+        if t.expected_status != "done":
+            continue
+        bar = _bar_beats(t)
+        seen.add(bar)
+        for c in t.checks:
+            if c.kind in ("notes_span", "notes_every_bar"):
+                assert c.args["bar_beats"] == bar, t.task_id
+        for o in t.oracle:
+            if o.tool == "create_midi_clip":
+                assert o.args["length_beats"] % bar == 0, t.task_id
+        if "four_on_floor_beat" in t.intent or "drum" in t.intent:
+            assert bar % 1 == 0
+        assert run(t, [(o.tool, o.args) for o in t.oracle if o.tool != "submit"]).reward == 1.0
+    assert seen - {4.0}, "no non-4/4 composition sampled"
+
+
+def test_clip_named_ignores_position_unless_given():
+    from openenv_daw.server.rewards.checks import run_check
+    from openenv_daw.server.sim.session import Session
+
+    t = generate("clip_edit", 0, "train")
+    s = Session.restore(t.initial_state)
+    track = s.tracks[0].name
+    clip = s.tracks[0].clips[0]
+    assert run_check("clip_named", s, s, {"track": track, "name": clip.name})
+    assert run_check("clip_named", s, s, {"track": track, "name": clip.name, "start_beat": 0.0})
+    assert not run_check("clip_named", s, s, {"track": track, "name": clip.name, "start_beat": 8.0})

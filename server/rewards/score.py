@@ -26,7 +26,7 @@ from openenv.core.rubrics import Gate, Rubric
 from openenv_daw.server.sim.session import Session
 from openenv_daw.server.tasks.model import Task
 
-from .checks import run_check
+from .checks import check_progress, run_check
 from .damage import damage_violations, extraneous_violations
 from .musicality import musicality
 
@@ -36,6 +36,8 @@ EXTRANEOUS_PENALTY = 0.15
 EXTRANEOUS_PENALTY_CAP = 0.5
 MUSIC_WEIGHT = 0.2  # share of the reward that musicality can earn (once the gates passed)
 MUSIC_FULL = 0.8  # musicality at which the bonus saturates (the oracle reaches it)
+SHAPED_MUSIC_FULL = 0.95  # the training reward keeps rewarding musicality beyond MUSIC_FULL
+SHAPED_PARTIAL_CAP = 0.5  # a failed critical check earns at most this, below any gated pass
 
 
 def extraneous_penalty(n: int) -> float:
@@ -63,6 +65,10 @@ class EpisodeFacts:
     expected_status: str
     musicality: float | None  # raw heuristic score; ``None`` for non-musical tasks
     music_detail: dict[str, Any] = field(default_factory=dict)
+    # for the shaped training reward (the strict reward ignores them)
+    check_initial: list[bool] = field(default_factory=list)  # each check on the initial session
+    check_progress: list[float] = field(default_factory=list)  # 1.0 passed, else graded share
+    unchanged: bool = False  # the final session equals the initial one
 
     @property
     def status_ok(self) -> bool:
@@ -89,6 +95,9 @@ def measure_episode(
         expected_status=task.expected_status,
         musicality=music,
         music_detail=detail,
+        check_initial=[run_check(c.kind, initial, initial, c.args) for c in task.checks],
+        check_progress=[check_progress(c.kind, final, initial, c.args) for c in task.checks],
+        unchanged=run_check("state_unchanged", final, initial, {}),
     )
 
 
@@ -168,11 +177,19 @@ class ErrorFree(_Leaf):
 
 
 class Musicality(_Leaf):
-    """Musicality over ``MUSIC_FULL``, capped at 1. Tasks that are not about music score 1.0."""
+    """Musicality over ``music_full`` (``MUSIC_FULL``), capped at 1. Tasks that are not about
+    music score 1.0."""
+
+    def __init__(self, music_full: float | None = None) -> None:
+        super().__init__()
+        self.music_full = music_full
+
+    def validation_config(self) -> dict[str, Any]:
+        return {"music_full": self.music_full or MUSIC_FULL}
 
     def score(self, facts: dict[str, Any]) -> float:
         m = facts["musicality"]
-        return 1.0 if m is None else min(1.0, m / MUSIC_FULL)
+        return 1.0 if m is None else min(1.0, m / (self.music_full or MUSIC_FULL))
 
 
 class Correctness(Rubric):
@@ -198,13 +215,13 @@ class Correctness(Rubric):
 class MusicBlend(Rubric):
     """``(1 - W) * correctness + W * musicality`` for musical tasks, else correctness."""
 
-    def __init__(self) -> None:
+    def __init__(self, music_full: float | None = None) -> None:
         super().__init__()
         self.correctness = Correctness()
-        self.music = Musicality()
+        self.music = Musicality(music_full)
 
     def validation_config(self) -> dict[str, Any]:
-        return {"music_weight": MUSIC_WEIGHT, "music_full": MUSIC_FULL}
+        return {"music_weight": MUSIC_WEIGHT, "music_full": self.music.music_full or MUSIC_FULL}
 
     def forward(self, action: Any, observation: Any) -> float:
         correct = self.correctness(action, observation)
@@ -216,15 +233,60 @@ class MusicBlend(Rubric):
         return (1 - w) * correct + w * music
 
 
-class DawRubric(Rubric):
-    """The episode reward. Hard constraints are ``Gate``s; extras and errors are multipliers."""
+class PartialProgress(Rubric):
+    """The shaped reward of an episode with a failed critical check: at most
+    ``SHAPED_PARTIAL_CAP`` times the mean progress on the checks the task asks to achieve, the
+    share of the checks it asks to preserve that still hold, and the correctness multiplier.
+    A feasible task left unchanged scores 0, so doing nothing never earns credit."""
 
     def __init__(self) -> None:
         super().__init__()
+        self.extraneous = NoExtraneous()
+        self.errors = ErrorFree()
+
+    def validation_config(self) -> dict[str, Any]:
+        return {"cap": SHAPED_PARTIAL_CAP}
+
+    def forward(self, action: Any, observation: Any) -> float:
+        facts = _facts(observation)
+        if facts is None:
+            return 0.0
+        # every check counts (critical or not), so one failed optional check lowers the reward
+        # smoothly instead of zeroing it
+        correct = self.extraneous(action, observation) * self.errors(action, observation)
+        if facts["unchanged"] and facts["expected_status"] == "done":
+            return 0.0
+        goal: list[float] = []
+        kept: list[float] = []
+        for ok, prog, was in zip(
+            facts["check_results"],
+            facts["check_progress"],
+            facts["check_initial"],
+            strict=True,
+        ):
+            (kept if was else goal).append(float(ok) if was else prog)
+        goal_mean = sum(goal) / len(goal) if goal else 1.0
+        kept_mean = sum(kept) / len(kept) if kept else 1.0
+        return SHAPED_PARTIAL_CAP * goal_mean * kept_mean * correct
+
+
+class DawRubric(Rubric):
+    """The episode reward. Hard constraints are ``Gate``s; extras and errors are multipliers.
+
+    ``shaped=True`` is the GRPO training reward: the submit status and damage stay hard gates, but
+    a failed critical check no longer zeroes the episode (``PartialProgress`` pays a capped,
+    graded share) and musicality saturates later. Evaluation always uses the strict default."""
+
+    def __init__(self, shaped: bool = False, music_full: float | None = None) -> None:
+        super().__init__()
+        self.shaped = shaped
         self.status = Gate(SubmitStatus())
         self.safety = Gate(NoDamage())
-        self.critical = Gate(CriticalChecks())
-        self.quality = MusicBlend()
+        self.critical = CriticalChecks() if shaped else Gate(CriticalChecks())
+        if shaped:
+            self.progress = PartialProgress()
+            music_full = music_full or SHAPED_MUSIC_FULL
+        self.quality = MusicBlend(music_full)
 
     def validation_config(self) -> dict[str, Any]:
         return {}
@@ -237,7 +299,13 @@ class DawRubric(Rubric):
         safety = self.safety(action, observation)
         critical = self.critical(action, observation)
         quality = self.quality(action, observation)
-        if status == 0.0 or safety == 0.0 or critical == 0.0:
+        partial = self.progress(action, observation) if self.shaped else 0.0
+        if status == 0.0 or safety == 0.0:
+            return 0.0
+        if self.shaped:
+            # passing every critical check never pays less than failing one
+            return round(max(quality, partial) if critical == 1.0 else partial, 6)
+        if critical == 0.0:
             return 0.0
         return round(quality, 6)
 

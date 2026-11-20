@@ -172,14 +172,14 @@ def chords_score(notes: list[AbsNote], bar: float = 4.0) -> tuple[float, dict[st
 # --- drums ----------------------------------------------------------------------------------
 
 
-def drums_score(notes: list[AbsNote]) -> tuple[float, dict[str, float]]:
+def drums_score(notes: list[AbsNote], bar: float = 4.0) -> tuple[float, dict[str, float]]:
     if not notes:
         return 0.0, {}
     vels = {n[3] for n in notes}
     varied = 1.0 if len(vels) >= 2 else 0.0
     kicks = [n for n in notes if n[1] == KICK]
-    down = [n[3] for n in kicks if abs(n[0] % 4) < 1e-6]
-    other = [n[3] for n in kicks if abs(n[0] % 4) >= 1e-6]
+    down = [n[3] for n in kicks if abs(n[0] % bar) < 1e-6]
+    other = [n[3] for n in kicks if abs(n[0] % bar) >= 1e-6]
     if down and other:
         diff = sum(down) / len(down) - sum(other) / len(other)
         accent = 1.0 if diff >= 5 else 0.3 if diff >= 0 else 0.0
@@ -217,7 +217,7 @@ def score_spec(spec: Any, session: Session) -> tuple[float, dict[str, float]]:
     if spec.kind == "chords":
         return chords_score(notes, spec.bar_beats)
     if spec.kind == "drums":
-        return drums_score(notes)
+        return drums_score(notes, spec.bar_beats)
     raise ValueError(f"unknown music spec kind {spec.kind!r}")
 
 

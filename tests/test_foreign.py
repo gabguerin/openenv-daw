@@ -47,7 +47,8 @@ def test_infeasible_tasks_are_blocked():
     for seed in range(10):
         t = generate("infeasible", seed, "train")
         assert t.expected_status == "blocked" and "blocked" in t.tags
-        assert [o.tool for o in t.oracle] == ["submit"] and t.oracle[0].args["status"] == "blocked"
+        assert t.oracle[-1].tool == "submit" and t.oracle[-1].args["status"] == "blocked"
+        assert {o.tool for o in t.oracle[:-1]} <= {"list_devices"}  # only read-only lookups
         ep = Episode(t)
         ep.run("submit", {"status": "blocked", "reason": "not possible"})
         assert ep.score.success
@@ -59,7 +60,10 @@ def test_compositional_with_an_infeasible_part_is_blocked():
         for t in (generate("compositional", s, "train") for s in range(40))
         if t.expected_status == "blocked"
     ]
-    assert blocked and all([o.tool for o in t.oracle] == ["submit"] for t in blocked)
+    assert blocked and all(
+        {o.tool for o in t.oracle[:-1]} <= {"list_devices"} and t.oracle[-1].tool == "submit"
+        for t in blocked
+    )
 
 
 def test_trl_reset_samples_by_seed():
