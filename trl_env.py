@@ -15,6 +15,7 @@ import itertools
 import json
 import re
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, get_args, get_origin
 
 from openenv.core.env_server.mcp_environment import get_server_tools
@@ -91,15 +92,36 @@ def _make_method(name: str, fn: Callable[..., Any]) -> Callable[..., str]:
     return method
 
 
+def _log_episode(path: Path, ep: Episode) -> None:
+    sc = ep.score
+    assert sc is not None
+    row = {
+        "task_id": ep.task.task_id,
+        "family": ep.task.family,
+        "reward": sc.reward,
+        "success": sc.success,
+        "gate_passed": sc.gate_passed,
+        "musicality": sc.musicality,
+        "calls": sc.calls,
+        "error_count": sc.error_count,
+        "termination": ep.termination,
+        "failed_checks": sc.failed_checks,
+    }
+    with path.open("a") as f:
+        f.write(json.dumps(row) + "\n")
+
+
 def make_environment_class(
     store: TaskStore | None = None,
     max_steps: int = MAX_STEPS,
     max_consecutive_errors: int = MAX_CONSECUTIVE_ERRORS,
     backend_factory: Callable[[], Backend] | None = None,
     shaped: bool = False,
+    episode_log: Path | None = None,
 ) -> type:
     """Build an ``environment_factory`` class exposing every tool (plus submit). ``shaped`` scores
-    with the dense training reward (``DawRubric(shaped=True)``) instead of the strict one."""
+    with the dense training reward (``DawRubric(shaped=True)``) instead of the strict one. With
+    ``episode_log`` every finished episode appends a JSON line (reward, success, termination...)."""
     template = build_server(lambda: SimBackend(), on_submit=lambda s, r: {})
     tools = get_server_tools(template)
 
@@ -128,6 +150,8 @@ def make_environment_class(
             if not ep.done:  # stopped without submit or hit the generation limit: truncated
                 ep.finalize(True, "no_submit")
             assert ep.score is not None
+            if episode_log is not None:
+                _log_episode(episode_log, ep)
             return float(ep.score.reward)
 
         def _call(self, name: str, arguments: dict[str, Any]) -> str:

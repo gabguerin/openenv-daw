@@ -26,7 +26,7 @@ from openenv.core.rubrics import Gate, Rubric
 from openenv_daw.server.sim.session import Session
 from openenv_daw.server.tasks.model import Task
 
-from .checks import check_progress, run_check
+from .checks import _progress_notes_in_key, check_progress, run_check
 from .damage import damage_violations, extraneous_violations
 from .musicality import musicality
 
@@ -82,6 +82,11 @@ def measure_episode(
     task: Task, initial: Session, final: Session, status: str | None, error_count: int
 ) -> EpisodeFacts:
     results = [run_check(c.kind, final, initial, c.args) for c in task.checks]
+    in_key = {
+        c.args["track"]: _progress_notes_in_key(final, c.args)
+        for c in task.checks
+        if c.kind == "notes_in_key"
+    }
     status_wrong = status != task.expected_status
     music, detail = (None, {}) if status_wrong else musicality(task.music, final)
     return EpisodeFacts(
@@ -96,7 +101,9 @@ def measure_episode(
         musicality=music,
         music_detail=detail,
         check_initial=[run_check(c.kind, initial, initial, c.args) for c in task.checks],
-        check_progress=[check_progress(c.kind, final, initial, c.args) for c in task.checks],
+        check_progress=[
+            check_progress(c.kind, final, initial, c.args, in_key) for c in task.checks
+        ],
         unchanged=run_check("state_unchanged", final, initial, {}),
     )
 

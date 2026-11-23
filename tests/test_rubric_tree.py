@@ -182,3 +182,27 @@ def test_shaped_progress_leaf_is_scored_even_when_a_gate_fails():
     ep.run("submit", {"status": "blocked"})  # wrong status: the gate zeroes the reward
     assert ep.score.reward == 0.0
     assert ep.score.components["progress"] is not None
+
+
+def test_progress_for_pitch_variety_needs_notes_in_key():
+    from openenv_daw.server.rewards import DawRubric
+
+    t = generate("melody_in_key", 0, "train")
+    steps = [copy.deepcopy(o) for o in t.oracle[:-1]]
+    ins = next(s for s in steps if s.tool == "insert_midi_notes")
+    key = next(c.args["key"] for c in t.checks if c.kind == "notes_in_key")
+    from openenv_daw.server.music import scale_classes
+
+    ok = set(scale_classes(key))
+    out_pitch = next(p for p in range(48, 60) if p % 12 not in ok)
+    for n in ins.args["notes"]:  # 'varied' but all out of key
+        n["pitch"] = out_pitch + 12 * (int(n["start_beat"]) % 2)
+    ep = Episode(t, 60, 5, rubric=DawRubric(shaped=True))
+    for s in steps:
+        ep.run(s.tool, s.args)
+    ep.run("submit", {"status": "done"})
+    kinds = [c.kind for c in t.checks]
+    prog = ep.score.facts.check_progress
+    for kind in ("distinct_pitches_at_least", "note_count_at_least"):
+        assert prog[kinds.index(kind)] < 0.5
+    assert ep.score.reward <= 0.5

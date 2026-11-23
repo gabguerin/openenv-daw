@@ -494,20 +494,61 @@ def _progress_chord_progression(s: Session, a: dict[str, Any]) -> float:
     return good / len(a["numerals"])
 
 
+def _progress_distinct_pitches(s: Session, a: dict[str, Any]) -> float:
+    t = _track(s, a["track"])
+    return min(1.0, len({n.pitch for n in _notes(t)}) / a["n"]) if t and a["n"] else 0.0
+
+
+def _progress_note_count(s: Session, a: dict[str, Any]) -> float:
+    t = _track(s, a["track"])
+    return min(1.0, len(_scoped(t, a)) / a["n"]) if t and a["n"] else 0.0
+
+
+def _progress_notes_every_bar(s: Session, a: dict[str, Any]) -> float:
+    t = _track(s, a["track"])
+    if t is None or not t.clips:
+        return 0.0
+    bar = a.get("bar_beats", 4.0)
+    bars = [
+        any(k * bar - 1e-6 <= n.start_beat < (k + 1) * bar - 1e-6 for n in c.notes)
+        for c in t.clips
+        for k in range(int(round(c.length_beats / bar)))
+    ]
+    return sum(bars) / len(bars) if bars else 0.0
+
+
+# Progress of these is only credited in proportion to the notes in key on the same track, so
+# padding a clip with out-of-key notes earns no partial credit.
+IN_KEY_GATED = ("distinct_pitches_at_least", "notes_every_bar", "note_count_at_least")
+
 PROGRESS: dict[str, Callable[[Session, dict[str, Any]], float]] = {
+    "distinct_pitches_at_least": _progress_distinct_pitches,
+    "notes_every_bar": _progress_notes_every_bar,
+    "note_count_at_least": _progress_note_count,
     "notes_in_key": _progress_notes_in_key,
     "hits_on_beats": _progress_hits_on_beats,
     "chord_progression": _progress_chord_progression,
 }
 
 
-def check_progress(kind: str, session: Session, initial: Session, args: dict[str, Any]) -> float:
+def check_progress(
+    kind: str,
+    session: Session,
+    initial: Session,
+    args: dict[str, Any],
+    in_key: dict[str, float] | None = None,
+) -> float:
     """1.0 for a passing check; for a failing one, a share in [0, 1) when the check has a graded
-    form (the bars of a progression, the notes in key, the beats hit), else 0.0."""
+    form (the bars of a progression, the notes in key, the beats hit), else 0.0. ``in_key`` maps a
+    track to its share of notes in key, which scales the in-key-gated kinds on that track, passing
+    or not (so out-of-key padding earns nothing)."""
+    gate = 1.0
+    if kind in IN_KEY_GATED and in_key:
+        gate = in_key.get(args.get("track"), 1.0)
     if run_check(kind, session, initial, args):
-        return 1.0
+        return 1.0 if gate >= 1.0 else min(gate, 0.999)
     fn = PROGRESS.get(kind)
-    return min(fn(session, args), 0.999) if fn else 0.0
+    return min(fn(session, args) * gate, 0.999) if fn else 0.0
 
 
 def run_check(kind: str, session: Session, initial: Session, args: dict[str, Any]) -> bool:

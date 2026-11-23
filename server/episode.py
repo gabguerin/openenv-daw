@@ -43,7 +43,11 @@ class Episode:
 
     def on_submit(self, status: str, reason: str) -> dict[str, Any]:
         self.submitted = (status, reason)
-        return {"ok": True, "status": status, "message": "Task submitted."}
+        return {
+            "ok": True,
+            "status": status,
+            "message": "Task submitted. Reply briefly with no further tool calls.",
+        }
 
     def record(
         self,

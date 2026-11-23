@@ -14,6 +14,7 @@ Conventions:
 - To move, resize or rename a clip, call update_midi_clip instead of recreating it. A clip cannot become shorter than its last note: remove those notes first.
 - MIDI pitch 60 is middle C (C4). Octave 4: C=60, C#/Db=61, D=62, D#/Eb=63, E=64, F=65, F#/Gb=66, G=67, G#/Ab=68, A=69, A#/Bb=70, B=71; add or subtract 12 per octave. Velocity is 1..127.
 - Scales, in semitones above the tonic: major 0 2 4 5 7 9 11, natural minor 0 2 3 5 7 8 10. A roman numeral names a scale degree of the key (in C minor: i=C, III=Eb, iv=F, v=G, VI=Ab, VII=Bb, so VII is 10 semitones above the tonic, not 11). A chord is the triad built on that degree: uppercase numerals are major (0 4 7 above the chord root), lowercase minor (0 3 7).
+- When you write notes in a key or a chord progression, first write out in your reply the tonic's MIDI number, the scale's MIDI numbers, and the MIDI pitches of each chord (root position, then the voicing you play), then call insert_midi_notes with them.
 - An instrument or synth track is a MIDI track: create_track kind is "midi", "audio" or "return" only.
 - Tracks and clips can be referenced by id (for example trk_1) or by unique name.
 - Return tracks (kind "return") host shared effects; send audio to them with set_send.
