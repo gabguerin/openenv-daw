@@ -18,7 +18,8 @@ from openenv_daw.server.tools import load_instructions
 HF_ROUTER_URL = "https://router.huggingface.co/v1"
 DEFAULT_LOCAL_URL = "http://127.0.0.1:8080/v1"
 DEFAULT_LOCAL_MODEL = "default_model"
-DEFAULT_SPACE_MODEL = "Qwen/Qwen3-32B"
+DEFAULT_SPACE_MODEL = "gabguerin/openenv-daw-lfm3-1.7b-sft"
+DEFAULT_MAX_TOKENS = 4096
 
 _TOOL_CALL_TAG = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
 _CODE_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
@@ -29,13 +30,25 @@ def is_space() -> bool:
     return bool(os.getenv("SPACE_ID"))
 
 
+def _env_max_tokens() -> int:
+    raw = os.getenv("OPENENV_DAW_MODEL_MAX_TOKENS", "").strip()
+    if raw:
+        try:
+            val = int(raw)
+            if val > 0:
+                return val
+        except ValueError:
+            pass
+    return DEFAULT_MAX_TOKENS
+
+
 @dataclass
 class ModelConfig:
     base_url: str
     model: str
     api_key: str = ""
     temperature: float = 0.0
-    max_tokens: int = 1024
+    max_tokens: int = DEFAULT_MAX_TOKENS
     timeout_s: float = 120.0
 
 
@@ -50,16 +63,19 @@ class ModelReply:
 
 def default_config() -> ModelConfig:
     """Default endpoint configuration from ``SPACE_ID`` and ``OPENENV_DAW_MODEL_*`` env vars."""
+    max_tokens = _env_max_tokens()
     if is_space():
         return ModelConfig(
             base_url=HF_ROUTER_URL,
             model=os.getenv("OPENENV_DAW_MODEL") or DEFAULT_SPACE_MODEL,
             api_key="",
+            max_tokens=max_tokens,
         )
     return ModelConfig(
         base_url=os.getenv("OPENENV_DAW_MODEL_URL") or DEFAULT_LOCAL_URL,
         model=os.getenv("OPENENV_DAW_MODEL") or DEFAULT_LOCAL_MODEL,
         api_key=os.getenv("OPENENV_DAW_MODEL_KEY") or "",
+        max_tokens=max_tokens,
     )
 
 
@@ -245,4 +261,15 @@ async def next_call(
         return ModelReply(text=text, raw=data, error=err)
     if name is not None:
         return ModelReply(tool=name, args=args, text=remaining, raw=data)
+    if choices[0].get("finish_reason") == "length":
+        return ModelReply(
+            tool=None,
+            args={},
+            text=text,
+            raw=data,
+            error=(
+                f"The model hit the max_tokens limit ({cfg.max_tokens}) before finishing "
+                "its tool call; raise Max tokens."
+            ),
+        )
     return ModelReply(tool=None, args={}, text=text, raw=data)

@@ -236,7 +236,9 @@ async def test_agent_next_call_variants():
     import httpx
     from openenv_daw.server.ui import agent
 
-    cfg = agent.ModelConfig(base_url="http://mock.local/v1", model="test-model", api_key="secret")
+    cfg = agent.ModelConfig(
+        base_url="http://mock.local/v1", model="test-model", api_key="secret", max_tokens=2048
+    )
     msgs = [{"role": "user", "content": "check session"}]
     tools = [{"type": "function", "function": {"name": "get_session", "parameters": {}}}]
 
@@ -244,6 +246,7 @@ async def test_agent_next_call_variants():
     def native_handler(req: httpx.Request) -> httpx.Response:
         assert req.url == httpx.URL("http://mock.local/v1/chat/completions")
         assert req.headers["authorization"] == "Bearer secret"
+        assert json.loads(req.content)["max_tokens"] == 2048
         return httpx.Response(
             200,
             json={
@@ -319,6 +322,25 @@ async def test_agent_next_call_variants():
     assert r4.tool is None
     assert r4.error is not None
     assert "401" in r4.error and "Invalid token" in r4.error
+
+    # 5. Truncated mid-call (finish_reason == "length")
+    def truncated_handler(_req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {"role": "assistant", "content": ""},
+                    }
+                ]
+            },
+        )
+
+    r5 = await agent.next_call(cfg, msgs, tools, transport=httpx.MockTransport(truncated_handler))
+    assert r5.tool is None
+    assert r5.error is not None
+    assert "max_tokens" in r5.error and "2048" in r5.error
 
 
 async def test_studio_model_step_executes_tool():

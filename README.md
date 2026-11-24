@@ -193,9 +193,10 @@ openenv fork <owner>/openenv-daw                    # copy a deployed Space to y
 
 The web UI runs on a `cpu-basic` Space (Docker Spaces on `cpu-basic` need a Hugging Face PRO
 account). Its "Run a model" card talks to any OpenAI-compatible chat endpoint: locally it defaults
-to `OPENENV_DAW_MODEL_URL` (`http://127.0.0.1:8080/v1`), `OPENENV_DAW_MODEL` (`default_model`) and
-optional `OPENENV_DAW_MODEL_KEY`; on the Space it calls Hugging Face Inference Providers using the
-visitor's own Sign in with Hugging Face token, so inference is billed to the visitor. The
+to `OPENENV_DAW_MODEL_URL` (`http://127.0.0.1:8080/v1`), `OPENENV_DAW_MODEL` (`default_model`),
+optional `OPENENV_DAW_MODEL_KEY`, and `OPENENV_DAW_MODEL_MAX_TOKENS` (`4096`); on the Space it
+calls Hugging Face Inference Providers using the visitor's own Sign in with Hugging Face token, so
+inference is billed to the visitor. The
 `space-openenv-daw` workflow runs the same `push`. The image is built on `openenv-base` with
 dependencies from `uv.lock`. To use a deployed Space from Python,
 `pip install git+https://huggingface.co/spaces/<owner>/openenv-daw` and
@@ -203,6 +204,10 @@ dependencies from `uv.lock`. To use a deployed Space from Python,
 
 ## Go further
 
+- [Model weights (`gabguerin/openenv-daw-lfm3-1.7b-sft`)](https://huggingface.co/gabguerin/openenv-daw-lfm3-1.7b-sft):
+  fine-tuned `LFM3-1.7B` SFT checkpoint (80.2% on held-out v9).
+- [Task dataset (`gabguerin/openenv-daw-tasks`)](https://huggingface.co/datasets/gabguerin/openenv-daw-tasks):
+  4,096 train tasks and 242 held-out tasks with checks and reference oracles.
 - [Design](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md): simulator, sounds and
   plugins, foreign objects, task families, scoring details.
 - [Writing an adapter](https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md#writing-an-adapter):

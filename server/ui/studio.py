@@ -236,8 +236,16 @@ def build_daw_studio(
         return (sess, *_views(sess), f"oracle: `{st.tool}`")
 
     def _resolve_cfg(
-        url: str, model: str, key: str, oauth_token: gr.OAuthToken | None
+        url: str,
+        model: str,
+        key: str,
+        max_tokens: Any,
+        oauth_token: gr.OAuthToken | None,
     ) -> tuple[agent.ModelConfig | None, str | None]:
+        try:
+            mt = max(int(max_tokens), 1) if max_tokens is not None else defaults.max_tokens
+        except (TypeError, ValueError):
+            mt = defaults.max_tokens
         if on_space:
             if oauth_token is None or not oauth_token.token:
                 return None, "Sign in with Hugging Face first."
@@ -246,6 +254,7 @@ def build_daw_studio(
                     base_url=agent.HF_ROUTER_URL,
                     model=(model or "").strip() or defaults.model,
                     api_key=oauth_token.token,
+                    max_tokens=mt,
                 ),
                 None,
             )
@@ -254,6 +263,7 @@ def build_daw_studio(
                 base_url=(url or "").strip() or defaults.base_url,
                 model=(model or "").strip() or defaults.model,
                 api_key=(key or "").strip(),
+                max_tokens=mt,
             ),
             None,
         )
@@ -263,10 +273,11 @@ def build_daw_studio(
         url: str,
         model: str,
         key: str,
+        max_tokens: Any,
         oauth_token: gr.OAuthToken | None = None,
     ):
         sess = need(sess)
-        cfg, err = _resolve_cfg(url, model, key, oauth_token)
+        cfg, err = _resolve_cfg(url, model, key, max_tokens, oauth_token)
         if err is not None or cfg is None:
             return (sess, *_views(sess), err or "Missing model configuration.")
         _, msg = await step_with_model(sess, cfg, oa_tools)
@@ -277,10 +288,11 @@ def build_daw_studio(
         url: str,
         model: str,
         key: str,
+        max_tokens: Any,
         oauth_token: gr.OAuthToken | None = None,
     ):
         sess = need(sess)
-        cfg, err = _resolve_cfg(url, model, key, oauth_token)
+        cfg, err = _resolve_cfg(url, model, key, max_tokens, oauth_token)
         if err is not None or cfg is None:
             yield (sess, *_views(sess), err or "Missing model configuration.")
             return
@@ -324,11 +336,11 @@ def build_daw_studio(
                         )
                         reset_btn = gr.Button("Reset", scale=0, min_width=110)
                         random_btn = gr.Button("Random task", scale=0, min_width=130)
+                    family = gr.Dropdown(fams, value="(any)", label="Task family")
                     task_card = gr.HTML()
                     with gr.Accordion("Choose a task", open=False, visible=False):
                         with gr.Row():
                             split = gr.Radio(["train", "heldout"], value="train", label="Split")
-                            family = gr.Dropdown(fams, value="(any)", label="Family")
                             number = gr.Number(
                                 0,
                                 precision=0,
@@ -358,11 +370,21 @@ def build_daw_studio(
                     )
                     if on_space:
                         gr.LoginButton()
-                        model_name = gr.Textbox(
-                            value=defaults.model,
-                            label="Model",
-                            placeholder=agent.DEFAULT_SPACE_MODEL,
-                        )
+                        with gr.Row():
+                            model_name = gr.Textbox(
+                                value=defaults.model,
+                                label="Model",
+                                placeholder=agent.DEFAULT_SPACE_MODEL,
+                                info="Default: our SFT model (or any HF Inference Providers model, e.g. Qwen/Qwen3-32B).",
+                                scale=3,
+                            )
+                            model_max_tokens = gr.Number(
+                                value=defaults.max_tokens,
+                                precision=0,
+                                minimum=1,
+                                label="Max tokens",
+                                scale=1,
+                            )
                         model_url: Any = gr.State(agent.HF_ROUTER_URL)
                         model_key: Any = gr.State("")
                     else:
@@ -383,6 +405,12 @@ def build_daw_studio(
                                 type="password",
                                 placeholder="optional",
                             )
+                            model_max_tokens = gr.Number(
+                                value=defaults.max_tokens,
+                                precision=0,
+                                minimum=1,
+                                label="Max tokens",
+                            )
                     with gr.Row():
                         model_step_btn = gr.Button("Step model", variant="primary")
                         model_run_btn = gr.Button("Run to end")
@@ -395,7 +423,7 @@ def build_daw_studio(
                         checks = gr.HTML()
         views = [task_card, arrangement, reward, checks, log]
         outs = [state, *views, result]
-        model_inputs = [state, model_url, model_name, model_key]
+        model_inputs = [state, model_url, model_name, model_key, model_max_tokens]
         model_outs = [state, *views, model_out]
         free: dict[str, Any] = {"concurrency_limit": None}
         demo.load(init, state, [state, *views], **free)
@@ -403,6 +431,9 @@ def build_daw_studio(
             reset, [state, split, family, number], [*outs, model_out, number], **free
         )
         random_btn.click(
+            random_task, [state, split, family, number], [*outs, model_out, number], **free
+        )
+        family.input(
             random_task, [state, split, family, number], [*outs, model_out, number], **free
         )
         tool.change(pick_tool, tool, [args, tool_doc], **free)
