@@ -10,10 +10,12 @@ import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import httpx
-from openenv_daw.server.tools import load_instructions
+from openenv_daw.server.prompt import load_instructions
+
+if TYPE_CHECKING:  # httpx is only needed by ``next_call`` (the browser bundle has none)
+    import httpx
 
 HF_ROUTER_URL = "https://router.huggingface.co/v1"
 DEFAULT_LOCAL_URL = "http://127.0.0.1:8080/v1"
@@ -180,10 +182,11 @@ def _extract_text_tool_call(text: str) -> tuple[str | None, dict[str, Any], str,
     return None, {}, text, None
 
 
-def _http_error_message(resp: httpx.Response) -> str:
+def http_error_message(status_code: int, body_text: str) -> str:
+    """A readable message for an HTTP error response (status and raw body text)."""
     detail = ""
     try:
-        body = resp.json()
+        body = json.loads(body_text)
         if isinstance(body, dict):
             err = body.get("error")
             if isinstance(err, dict):
@@ -193,9 +196,58 @@ def _http_error_message(resp: httpx.Response) -> str:
             elif body.get("message"):
                 detail = str(body["message"])
     except ValueError:
-        detail = resp.text.strip()[:300]
+        detail = body_text.strip()[:300]
     suffix = f": {detail}" if detail else ""
-    return f"Model request failed (HTTP {resp.status_code}){suffix}"
+    return f"Model request failed (HTTP {status_code}){suffix}"
+
+
+def parse_chat_response(data: Any, max_tokens: int) -> ModelReply:
+    """Turn a decoded ``/chat/completions`` body into a ``ModelReply`` (tool call, text or error)."""
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices:
+        return ModelReply(
+            raw=data if isinstance(data, dict) else None, error="Model returned no choices."
+        )
+
+    msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+    if not isinstance(msg, dict):
+        return ModelReply(raw=data, error="Model response missing message object.")
+
+    text = (msg.get("content") or "").strip()
+    tool_calls = msg.get("tool_calls") or []
+    if isinstance(tool_calls, list) and tool_calls:
+        first = tool_calls[0]
+        fn = first.get("function") if isinstance(first, dict) else None
+        if not isinstance(fn, dict):
+            return ModelReply(text=text, raw=data, error="Model returned a malformed tool call.")
+        name = fn.get("name")
+        if not isinstance(name, str) or not name:
+            return ModelReply(
+                text=text, raw=data, error="Model returned a tool call without a name."
+            )
+        args, err = _parse_args(fn.get("arguments"))
+        if err is not None:
+            return ModelReply(text=text, raw=data, error=err)
+        assert args is not None
+        return ModelReply(tool=name, args=args, text=text, raw=data)
+
+    name, args, remaining, err = _extract_text_tool_call(text)
+    if err is not None:
+        return ModelReply(text=text, raw=data, error=err)
+    if name is not None:
+        return ModelReply(tool=name, args=args, text=remaining, raw=data)
+    if choices[0].get("finish_reason") == "length":
+        return ModelReply(
+            tool=None,
+            args={},
+            text=text,
+            raw=data,
+            error=(
+                f"The model hit the max_tokens limit ({max_tokens}) before finishing "
+                "its tool call; raise Max tokens."
+            ),
+        )
+    return ModelReply(tool=None, args={}, text=text, raw=data)
 
 
 async def next_call(
@@ -206,6 +258,8 @@ async def next_call(
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> ModelReply:
     """Request the next tool call from an OpenAI-compatible ``/chat/completions`` endpoint."""
+    import httpx  # not imported at module level: the browser (Pyodide) bundle has no httpx
+
     url = cfg.base_url.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
     if cfg.api_key:
@@ -225,51 +279,10 @@ async def next_call(
         return ModelReply(error=f"Model request failed: {e}")
 
     if resp.status_code >= 400:
-        return ModelReply(error=_http_error_message(resp))
+        return ModelReply(error=http_error_message(resp.status_code, resp.text))
 
     try:
         data = resp.json()
     except ValueError as e:
         return ModelReply(error=f"Invalid JSON from model server: {e}")
-
-    choices = data.get("choices") if isinstance(data, dict) else None
-    if not isinstance(choices, list) or not choices:
-        return ModelReply(raw=data if isinstance(data, dict) else None, error="Model returned no choices.")
-
-    msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-    if not isinstance(msg, dict):
-        return ModelReply(raw=data, error="Model response missing message object.")
-
-    text = (msg.get("content") or "").strip()
-    tool_calls = msg.get("tool_calls") or []
-    if isinstance(tool_calls, list) and tool_calls:
-        first = tool_calls[0]
-        fn = first.get("function") if isinstance(first, dict) else None
-        if not isinstance(fn, dict):
-            return ModelReply(text=text, raw=data, error="Model returned a malformed tool call.")
-        name = fn.get("name")
-        if not isinstance(name, str) or not name:
-            return ModelReply(text=text, raw=data, error="Model returned a tool call without a name.")
-        args, err = _parse_args(fn.get("arguments"))
-        if err is not None:
-            return ModelReply(text=text, raw=data, error=err)
-        assert args is not None
-        return ModelReply(tool=name, args=args, text=text, raw=data)
-
-    name, args, remaining, err = _extract_text_tool_call(text)
-    if err is not None:
-        return ModelReply(text=text, raw=data, error=err)
-    if name is not None:
-        return ModelReply(tool=name, args=args, text=remaining, raw=data)
-    if choices[0].get("finish_reason") == "length":
-        return ModelReply(
-            tool=None,
-            args={},
-            text=text,
-            raw=data,
-            error=(
-                f"The model hit the max_tokens limit ({cfg.max_tokens}) before finishing "
-                "its tool call; raise Max tokens."
-            ),
-        )
-    return ModelReply(tool=None, args={}, text=text, raw=data)
+    return parse_chat_response(data, cfg.max_tokens)

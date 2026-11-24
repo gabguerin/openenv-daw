@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAW Studio · openenv-daw</title>
+<style>
+:root{
+  --background-fill-primary:#18181b;--background-fill-secondary:#0f0f12;
+  --body-text-color:#e4e4e7;--body-text-color-subdued:#a1a1aa;
+  --border-color-primary:#3f3f46;--color-accent:#f97316;--color-accent-soft:#3a2412;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--background-fill-secondary);color:var(--body-text-color);
+  font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+code,pre{font-family:var(--font-mono)}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 60px}
+.oe-eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-accent)}
+h1{margin:2px 0 6px;font-size:34px}
+h2{margin:0 0 4px;font-size:17px}
+.lead{color:var(--body-text-color-subdued);margin:0 0 18px;max-width:70ch}
+.grid{display:grid;grid-template-columns:3fr 2fr;gap:16px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid var(--border-color-primary);border-radius:12px;padding:16px;
+  background:var(--background-fill-primary);margin-bottom:16px}
+.card p{margin:0 0 10px;color:var(--body-text-color-subdued)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.row>.grow{flex:1;min-width:120px}
+label{display:block;font-size:12px;color:var(--body-text-color-subdued);margin-bottom:3px}
+input,select,textarea{width:100%;background:var(--background-fill-secondary);color:inherit;
+  border:1px solid var(--border-color-primary);border-radius:8px;padding:7px 9px;font:inherit}
+textarea{font-family:var(--font-mono);font-size:12.5px;min-height:96px;resize:vertical}
+button{background:var(--background-fill-secondary);color:inherit;cursor:pointer;
+  border:1px solid var(--border-color-primary);border-radius:8px;padding:7px 14px;font:inherit}
+button:hover:not(:disabled){border-color:var(--color-accent)}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--color-accent);border-color:var(--color-accent);color:#111;font-weight:600}
+.tools{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.tools button{padding:4px 10px;font-family:var(--font-mono);font-size:12.5px}
+.tools button.on{background:var(--color-accent-soft);border-color:var(--color-accent)}
+.msg{margin-top:8px;font-size:13px;overflow-wrap:anywhere}
+.msg.bad{color:#f87171}
+.msg pre{background:var(--background-fill-secondary);border:1px solid var(--border-color-primary);
+  border-radius:8px;padding:8px;overflow:auto;max-height:260px;margin:6px 0}
+#status{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(15,15,18,.92);z-index:9;font-size:15px;text-align:center;padding:20px}
+details summary{cursor:pointer;color:var(--body-text-color-subdued);margin-bottom:8px}
+.hint{font-size:12px;color:var(--body-text-color-subdued);margin-top:6px}
+#log li{cursor:pointer}
+</style>
+</head>
+<body>
+<div id="status">Loading Python (Pyodide) and the DAW simulator…</div>
+<main>
+  <div class="oe-eyebrow">openenv_daw · MCP environment</div>
+  <h1>DAW</h1>
+  <p class="lead">A tool-use environment for music production: edit a project with portable DAW tools
+    manually, with the oracle, or with a model, and get scored on the result. This page runs the real
+    simulator, tasks and rubric in your browser; nothing is sent to a server except the model call.</p>
+
+  <div class="grid">
+    <div>
+      <section class="card">
+        <h2>1. Start an episode</h2>
+        <p><code>reset()</code> returns the task.</p>
+        <div class="row">
+          <button id="reset" class="primary">Reset</button>
+          <button id="random">Random task</button>
+          <div class="grow"><label for="family">Task family</label><select id="family"></select></div>
+        </div>
+        <div class="row">
+          <div class="grow"><label for="split">Split</label>
+            <select id="split"><option>train</option><option>heldout</option></select></div>
+          <div class="grow"><label for="seed">Seed</label>
+            <input id="seed" type="number" min="0" step="1" value="0"></div>
+        </div>
+        <div id="task"></div>
+      </section>
+
+      <section class="card">
+        <h2>2. Call a tool</h2>
+        <p><code>step()</code> sends a tool call. Pick one:</p>
+        <div id="arrangement"></div>
+        <div id="tools" class="tools"></div>
+        <div id="tool-doc" class="hint"></div>
+        <label for="args" style="margin-top:8px">Arguments (JSON)</label>
+        <textarea id="args" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button id="run" class="primary">Run</button>
+          <button id="oracle">Step oracle</button>
+        </div>
+        <div id="result" class="msg"></div>
+      </section>
+
+      <section class="card">
+        <h2>3. Run a model</h2>
+        <p>Ask a model for the next tool call and run it.</p>
+        <div class="row">
+          <div class="grow"><label for="mode">Endpoint</label>
+            <select id="mode">
+              <option value="hf">Hugging Face Inference Providers (sign in)</option>
+              <option value="custom">OpenAI-compatible URL</option>
+            </select></div>
+          <div id="hf-auth"></div>
+        </div>
+        <div id="custom-fields" class="row" hidden>
+          <div class="grow"><label for="base-url">Base URL</label><input id="base-url"></div>
+          <div class="grow"><label for="api-key">API key</label>
+            <input id="api-key" type="password" placeholder="optional"></div>
+        </div>
+        <div class="row">
+          <div class="grow" style="flex:3"><label for="model">Model</label><input id="model"></div>
+          <div class="grow"><label for="max-tokens">Max tokens</label>
+            <input id="max-tokens" type="number" min="1" step="1"></div>
+        </div>
+        <div class="row">
+          <button id="model-step" class="primary">Step model</button>
+          <button id="model-run">Run to end</button>
+          <button id="model-stop" hidden>Stop</button>
+        </div>
+        <div class="hint">The request goes straight from your browser to the endpoint. A local server
+          needs CORS enabled, and an <code>http://</code> URL only works from an
+          <code>http://</code> page or <code>localhost</code>.</div>
+        <div id="model-out" class="msg"></div>
+      </section>
+    </div>
+
+    <div>
+      <section class="card">
+        <div id="log"></div>
+        <div id="reward"></div>
+        <details><summary>Checks</summary><div id="checks"></div></details>
+      </section>
+    </div>
+  </div>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>

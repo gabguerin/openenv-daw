@@ -7,12 +7,11 @@ standalone MCP server later. Tools return plain JSON dicts (``ok`` plus the affe
 from __future__ import annotations
 
 from collections.abc import Callable
-from importlib import resources
 from typing import Any, Literal
 
 from fastmcp import FastMCP
 from openenv_daw.server.backends import Backend
-from openenv_daw.server.sim.session import GRID_DIVISIONS
+from openenv_daw.server.prompt import load_instructions
 from pydantic import BaseModel, Field
 
 Result = dict[str, Any]
@@ -25,10 +24,7 @@ class NoteIn(BaseModel):
     velocity: int = Field(default=100, description="Velocity 1-127")
 
 
-def load_instructions() -> str:
-    """The system prompt. Training and deployment both call this function."""
-    text = resources.files("openenv_daw.server").joinpath("instructions.md").read_text()
-    return text.replace("{GRID}", str(GRID_DIVISIONS)).rstrip() + "\n"
+__all__ = ["NoteIn", "Result", "build_server", "load_instructions"]
 
 
 def build_server(

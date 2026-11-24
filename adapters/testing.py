@@ -222,17 +222,29 @@ TOOL_SCENARIOS: dict[str, list[tuple[str, dict[str, Any], bool]]] = {
     ],
     "clips_and_notes": [
         ("create_track", {"name": "Lead", "kind": "midi"}, True),
-        ("create_midi_clip", {"track": "Lead", "start_beat": 0, "length_beats": 4, "name": "A"}, True),
+        (
+            "create_midi_clip",
+            {"track": "Lead", "start_beat": 0, "length_beats": 4, "name": "A"},
+            True,
+        ),
         ("insert_midi_notes", {"clip": "A", "notes": _N + _N2}, True),
         ("update_midi_clip", {"clip": "A", "name": "Hook"}, True),
         ("update_midi_clip", {"clip": "Hook", "start_beat": 8}, True),
         ("update_midi_clip", {"clip": "Hook", "length_beats": 8}, True),
-        ("update_midi_clip", {"clip": "Hook", "start_beat": 4, "length_beats": 6, "name": "H2"}, True),
+        (
+            "update_midi_clip",
+            {"clip": "Hook", "start_beat": 4, "length_beats": 6, "name": "H2"},
+            True,
+        ),
         ("update_midi_clip", {"clip": "H2", "length_beats": 2}, False),  # would cut a note
         ("remove_midi_notes", {"clip": "H2", "pitch": 62}, True),
         ("update_midi_clip", {"clip": "H2", "length_beats": 2}, True),
         ("get_session", {"include_notes": True}, True),
-        ("create_midi_clip", {"track": "Lead", "start_beat": 8, "length_beats": 4, "name": "B"}, True),
+        (
+            "create_midi_clip",
+            {"track": "Lead", "start_beat": 8, "length_beats": 4, "name": "B"},
+            True,
+        ),
         ("update_midi_clip", {"clip": "B", "start_beat": 5}, False),  # 5..9 overlaps H2 at 4..6
         ("delete_clip", {"clip": "B"}, True),
     ],
@@ -242,10 +254,31 @@ TOOL_SCENARIOS: dict[str, list[tuple[str, dict[str, Any], bool]]] = {
         ("insert_device", {"track": "Lead", "device": "simple_synth"}, True),
         ("insert_device", {"track": "Lead", "device": "eq"}, True),
         ("get_device_params", {"track": "Lead", "device": "simple_synth"}, True),
-        ("set_device_param", {"track": "Lead", "device": "simple_synth", "param": "waveform", "display_value": "sine"}, True),
-        ("set_device_param", {"track": "Lead", "device": "simple_synth", "param": "cutoff", "display_value": 1000}, True),
-        ("set_device_param", {"track": "Lead", "device": "eq", "param": "mid_gain", "value": 0.7}, True),
-        ("set_device_param", {"track": "Lead", "device": "eq", "param": "mid_gain", "display_value": 99}, False),
+        (
+            "set_device_param",
+            {
+                "track": "Lead",
+                "device": "simple_synth",
+                "param": "waveform",
+                "display_value": "sine",
+            },
+            True,
+        ),
+        (
+            "set_device_param",
+            {"track": "Lead", "device": "simple_synth", "param": "cutoff", "display_value": 1000},
+            True,
+        ),
+        (
+            "set_device_param",
+            {"track": "Lead", "device": "eq", "param": "mid_gain", "value": 0.7},
+            True,
+        ),
+        (
+            "set_device_param",
+            {"track": "Lead", "device": "eq", "param": "mid_gain", "display_value": 99},
+            False,
+        ),
         ("delete_device", {"track": "Lead", "device": "eq"}, True),
         ("get_session", {"track": "Lead"}, True),
     ],

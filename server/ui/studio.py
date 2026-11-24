@@ -4,46 +4,17 @@ calls, oracle stepping and model stepping. Built through ``create_app(gradio_bui
 from __future__ import annotations
 
 import json
-import random
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import gradio as gr
 from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
 from openenv_daw.server.daw_environment import DawEnvironment
-from openenv_daw.server.rewards.score import score_episode
 from openenv_daw.server.sim.session import Session as SessionModel
 from openenv_daw.server.tasks.generators import families
 
-from . import agent, render
-
-
-def skeleton(schema: dict[str, Any]) -> str:
-    """A JSON args template for a tool: its required parameters with placeholder values."""
-    zero = {"string": "", "integer": 0, "number": 0, "boolean": False, "array": [], "object": {}}
-    props = schema.get("properties", {})
-    out: dict[str, Any] = {}
-    for k in schema.get("required", []):
-        p = props.get(k, {})
-        if p.get("enum"):
-            out[k] = p["enum"][0]
-        elif "default" in p:
-            out[k] = p["default"]
-        else:
-            out[k] = zero.get(p.get("type", "string"))
-    return json.dumps(out, indent=2)
-
-
-def reset_kwargs(
-    split: str, family: str | None, number: Any, randomize: bool = False
-) -> dict[str, Any]:
-    """Arguments for ``env.reset``. The number is a seed on both splits (heldout wraps within
-    the family-filtered pool); a random task draws its own seed so it can be reproduced."""
-    kw: dict[str, Any] = {"split": split}
-    if family and family != "(any)":
-        kw["family"] = family
-    kw["seed"] = random.randrange(2**31) if randomize else max(int(number or 0), 0)
-    return kw
+from . import agent, render, static_bridge
+from .static_bridge import reset_kwargs, skeleton
 
 
 class Session:
@@ -64,65 +35,20 @@ class Session:
 
 def sync_snapshots(sess: Session) -> None:
     """Keep ``snapshots`` aligned with the episode's steps (one snapshot per logged step)."""
-    ep = sess.env.episode
-    if ep is None:
-        sess.snapshots = []
-        return
-    if not sess.snapshots:
-        sess.snapshots = [ep.initial.snapshot()]
-    while len(sess.snapshots) < ep.step_count + 1:
-        sess.snapshots.append(ep.backend.session.snapshot())
+    static_bridge.sync_snapshots(sess.env.episode, sess.snapshots)
 
 
 def _views(sess: Session | None) -> tuple[Any, ...]:
     """task, project, reward, checks, episode."""
     if sess is None or sess.env.episode is None:
-        empty = SessionModel()
-        return (
-            render.task_html(None),
-            render.arrangement_html(empty, empty),
-            render.reward_placeholder_html(),
-            "",
-            render.episode_html([], None, "", False),
-        )
-    sync_snapshots(sess)
-    ep = sess.env.episode
-    latest = len(sess.snapshots) - 1
-    vs = sess.view_step if sess.view_step is not None and sess.view_step < latest else None
-    k = latest if vs is None else vs
-    cur = SessionModel.restore(sess.snapshots[k])
-    prev = SessionModel.restore(sess.snapshots[k - 1]) if k > 0 else None
-    final = ep.score.as_dict() if ep.score else None
-    shown_final = final if vs is None else None
-    damage = [*final["damage"], *final["extraneous"]] if vs is None and final else None
-    if damage is None:
-        sc = score_episode(ep.task, ep.initial, cur, None, ep.error_count, False)
-        damage = [*sc.damage, *sc.extraneous]
-    subtitle = f"step {ep.step_count}/{ep.max_steps} · {'done' if ep.done else 'running'}"
-    if vs is not None:
-        subtitle += f" · viewing step {vs}"
-    return (
-        render.task_html(ep.task),
-        render.arrangement_html(cur, ep.initial, prev, None, damage),
-        render.reward_compact_html(ep.task, ep.initial, cur, ep.error_count, shown_final),
-        render.dark_checks_html(ep.task, ep.initial, cur, ep.error_count, shown_final, prev),
-        render.episode_html(ep.step_log, k if k > 0 else None, subtitle, True),
-    )
+        return static_bridge.empty_views()
+    return static_bridge.episode_views(sess.env.episode, sess.snapshots, sess.view_step)
 
 
 async def _call(sess: Session, tool: str, args: dict[str, Any]) -> None:
     # step_async: the sync step returns an un-awaited rubric coroutine inside a running loop
     await sess.env.step_async(CallToolAction(tool_name=tool, arguments=args))
     sess.view_step = None
-
-
-def _format_model_reply(reply: agent.ModelReply, last: dict[str, Any]) -> str:
-    parts: list[str] = []
-    if reply.text:
-        parts.append(reply.text)
-    parts.append(f"`{reply.tool}`\n```json\n{json.dumps(reply.args, indent=2)}\n```")
-    parts.append("```json\n" + json.dumps(last["result"], indent=1)[:4000] + "\n```")
-    return "\n\n".join(parts)
 
 
 async def step_with_model(
@@ -143,15 +69,11 @@ async def step_with_model(
         return False, "The episode is over; reset."
     messages = agent.build_messages(ep.task.intent, ep.step_log)
     reply = await caller(cfg, messages, oa_tools)
-    if reply.error:
-        return False, reply.error
-    if reply.tool is None:
-        if reply.text:
-            return False, f"Model returned no tool call:\n\n{reply.text}"
-        return False, "Model returned no tool call."
+    failure = static_bridge.reply_failure(reply)
+    if failure is not None or reply.tool is None:
+        return False, failure or "Model returned no tool call."
     await _call(sess, reply.tool, reply.args)
-    last = ep.step_log[-1]
-    return True, _format_model_reply(reply, last)
+    return True, static_bridge.format_model_reply(reply, ep.step_log[-1])
 
 
 def build_daw_studio(
@@ -427,9 +349,7 @@ def build_daw_studio(
         model_outs = [state, *views, model_out]
         free: dict[str, Any] = {"concurrency_limit": None}
         demo.load(init, state, [state, *views], **free)
-        reset_btn.click(
-            reset, [state, split, family, number], [*outs, model_out, number], **free
-        )
+        reset_btn.click(reset, [state, split, family, number], [*outs, model_out, number], **free)
         random_btn.click(
             random_task, [state, split, family, number], [*outs, model_out, number], **free
         )

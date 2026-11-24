@@ -53,4 +53,8 @@ First release, not yet published. This section describes the current feature set
   Face Inference Providers with Sign in with Hugging Face OAuth on the Space.
 - **Layout**: task templates live in one `server/tasks/templates.yaml`; `openenv-daw mcp` is
   served from `cli.py`.
-- **Discovery**: `discovery.json` for `openenv catalog build`, checked in CI.
+- **Discovery**: `discovery.json` for `openenv catalog build`, checked in CI. Tags include `audio`
+  and `ableton` for modality and DAW searches.
+- **Static Space**: `scripts/push_static_space.py` builds a free Hugging Face Static Space where
+  DAW Studio runs in the browser through Pyodide (`server/ui/static_bridge.py`,
+  `server/ui/static/`), calling models from the browser. The Docker Space is unchanged.

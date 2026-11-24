@@ -15,10 +15,13 @@ license: apache-2.0
 tags:
   - openenv
   - rl-environment
-  - mcp
-  - tool-use
+  - audio
   - music
-  - reinforcement-learning
+  - daw
+  - midi
+  - tool-use
+  - mcp
+  - ableton
 ---
 
 # openenv-daw
@@ -78,7 +81,9 @@ from openenv_daw.client import DawEnv
 
 with DawEnv(base_url="http://localhost:8000").sync() as env:
     r = env.reset(task_id="mix_balance-train-0")  # or split="train", seed=0
-    print(r.observation.intent)  # wording varies, e.g. "Turn Lead down to -3 dB and pan Pad fully right."
+    print(
+        r.observation.intent
+    )  # wording varies, e.g. "Turn Lead down to -3 dB and pan Pad fully right."
     env.call("get_session")  # the agent must look at the project first
     env.call("set_mixer_channel", track="Lead", volume_db=-3)
     env.call("set_mixer_channel", track="Pad", pan=1.0)
@@ -181,7 +186,21 @@ keys only and held out sharps and flats, so v8 trains on 20 keys and holds out f
 
 ## Deploy and share
 
-All with the `openenv` CLI:
+Two ways to host the web UI on Hugging Face:
+
+- **Static Space (free, no PRO needed)**: DAW Studio runs entirely in the visitor's browser with
+  Pyodide (the simulator, tasks and rubric are pure Python). Models are called from the browser:
+  Hugging Face Inference Providers with Sign in with Hugging Face, or any OpenAI-compatible URL.
+  It does not expose the OpenEnv server API.
+- **Docker Space (`openenv push`)**: the full OpenEnv server (WebSocket API, `DawEnv.from_env`) plus
+  the Gradio UI. Docker Spaces on `cpu-basic` need a Hugging Face PRO account.
+
+```bash
+python scripts/push_static_space.py --out dist/static-space                 # build only
+python scripts/push_static_space.py --push --repo-id <you>/openenv-daw      # build and push (HF_TOKEN)
+```
+
+The Docker Space and the rest of the CLI:
 
 ```bash
 openenv validate --level static --skip-build        # fast manifest check

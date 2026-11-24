@@ -1,6 +1,6 @@
 {
   "description": "Train and evaluate AI agents that operate a digital audio workstation (DAW) for music production. A fast, deterministic JSON DAW simulator behind a portable MCP tool set: create tracks and MIDI clips, write melodies, chord progressions and drum beats, edit notes, set mixer levels and sends, load devices and presets, and refuse infeasible requests. Verifiable rewards from declarative state checks, with an oracle solution for every task. Tools map to Ableton Live, REAPER, Bitwig and Ardour adapters.",
-  "tags": ["openenv", "music", "daw", "midi", "tool-use", "mcp", "agent", "rl", "ableton"],
+  "tags": ["openenv", "audio", "music", "daw", "midi", "tool-use", "mcp", "agents", "rl", "ableton"],
   "representative_queries": [
     "find an environment for training an agent to use a digital audio workstation",
     "find an MCP tool-use environment for music production",

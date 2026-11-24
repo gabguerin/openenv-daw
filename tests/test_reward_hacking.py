@@ -313,8 +313,10 @@ def test_unrequested_rack_or_plugin_is_extraneous():
 
     def foreign(t: Task) -> bool:
         ins = [o for o in t.oracle if o.tool == "insert_device"]
-        return bool(ins) and find_item(ins[0].args["device"]) is not None and not any(
-            o.args["device"] in ("simple_synth", "drum_kit") for o in ins
+        return (
+            bool(ins)
+            and find_item(ins[0].args["device"]) is not None
+            and not any(o.args["device"] in ("simple_synth", "drum_kit") for o in ins)
         )
 
     t = first("load_sound", foreign)
