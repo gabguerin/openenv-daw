@@ -107,8 +107,10 @@ def _log_episode(path: Path, ep: Episode) -> None:
         "termination": ep.termination,
         "failed_checks": sc.failed_checks,
     }
+    line = json.dumps(row)
     with path.open("a") as f:
-        f.write(json.dumps(row) + "\n")
+        f.write(line + "\n")
+    print("GRPO_EPISODE", line, flush=True)
 
 
 def make_environment_class(
