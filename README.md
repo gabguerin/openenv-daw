@@ -189,9 +189,9 @@ keys only and held out sharps and flats, so v8 trains on 20 keys and holds out f
 Two ways to host the web UI on Hugging Face:
 
 - **Static Space (free, no PRO needed)**: DAW Studio runs entirely in the visitor's browser with
-  Pyodide (the simulator, tasks and rubric are pure Python). Models are called from the browser:
-  Hugging Face Inference Providers with Sign in with Hugging Face, or any OpenAI-compatible URL.
-  It does not expose the OpenEnv server API.
+  Pyodide (the simulator, tasks and rubric are pure Python) for manual and oracle play. It has no
+  model stepping (our SFT model has no Inference Provider) and does not expose the OpenEnv server
+  API.
 - **Docker Space (`openenv push`)**: the full OpenEnv server (WebSocket API, `DawEnv.from_env`) plus
   the Gradio UI. Docker Spaces on `cpu-basic` need a Hugging Face PRO account.
 

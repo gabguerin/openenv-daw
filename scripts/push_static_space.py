@@ -3,8 +3,8 @@
 
 The static Space needs no server: Pyodide runs the real simulator, tasks and rubric in the
 visitor's browser (``server/ui/static_bridge.py`` is the Python side, ``server/ui/static/`` the
-page). It is free (Docker and Gradio Spaces on ``cpu-basic`` need a Hugging Face PRO account) and
-supports Sign in with Hugging Face, so the model call can be billed to the visitor.
+page). It is free (Docker and Gradio Spaces on ``cpu-basic`` need a Hugging Face PRO account).
+It covers manual tool calls and oracle stepping; stepping with a model needs the Gradio UI.
 
     python scripts/push_static_space.py --out dist/static-space                # build only
     python scripts/push_static_space.py --push --repo-id gabguerin/openenv-daw # build and push
@@ -123,18 +123,18 @@ def space_readme() -> str:
     text = (PACKAGE_ROOT / "README.md").read_text()
     _, front, _ = text.split("---", 2)
     meta: dict[str, Any] = yaml.safe_load(front)
-    for key in ("app_port", "base_path", "app_file"):
+    for key in ("app_port", "base_path", "app_file", "hf_oauth", "hf_oauth_scopes"):
         meta.pop(key, None)
     meta["sdk"] = "static"
     card = yaml.safe_dump(meta, sort_keys=False, allow_unicode=True).rstrip()
     body = (
         "# DAW Studio\n\n"
-        "Edit a music project with portable DAW tools, manually, with the oracle, or with a model,"
-        " and get scored by the environment's rubric. The simulator, tasks and rewards of"
-        " [openenv-daw](https://github.com/gabguerin/daw-agent) run in your browser through"
-        " Pyodide; only the model call leaves the page.\n\n"
-        "- Models: sign in with Hugging Face to use Inference Providers (billed to you), or point"
-        " it at any OpenAI-compatible URL.\n"
+        "Edit a music project with portable DAW tools, manually or by replaying the oracle, and"
+        " get scored by the environment's rubric. The simulator, tasks and rewards of"
+        " [openenv-daw](https://github.com/gabguerin/daw-agent) run entirely in your browser"
+        " through Pyodide.\n\n"
+        "- To step with a model, run the Gradio UI locally (for example with `mlx_lm.server`) or"
+        " use the Docker Space.\n"
         "- Trained model: [gabguerin/openenv-daw-lfm3-1.7b-sft](https://huggingface.co/gabguerin/openenv-daw-lfm3-1.7b-sft)\n"
         "- Tasks: [gabguerin/openenv-daw-tasks](https://huggingface.co/datasets/gabguerin/openenv-daw-tasks)\n"
     )

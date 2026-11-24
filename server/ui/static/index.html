@@ -56,8 +56,8 @@ details summary{cursor:pointer;color:var(--body-text-color-subdued);margin-botto
   <div class="oe-eyebrow">openenv_daw · MCP environment</div>
   <h1>DAW</h1>
   <p class="lead">A tool-use environment for music production: edit a project with portable DAW tools
-    manually, with the oracle, or with a model, and get scored on the result. This page runs the real
-    simulator, tasks and rubric in your browser; nothing is sent to a server except the model call.</p>
+    manually or by replaying the oracle, and get scored on the result. This page runs the real
+    simulator, tasks and rubric in your browser; nothing leaves it.</p>
 
   <div class="grid">
     <div>
@@ -91,38 +91,6 @@ details summary{cursor:pointer;color:var(--body-text-color-subdued);margin-botto
           <button id="oracle">Step oracle</button>
         </div>
         <div id="result" class="msg"></div>
-      </section>
-
-      <section class="card">
-        <h2>3. Run a model</h2>
-        <p>Ask a model for the next tool call and run it.</p>
-        <div class="row">
-          <div class="grow"><label for="mode">Endpoint</label>
-            <select id="mode">
-              <option value="hf">Hugging Face Inference Providers (sign in)</option>
-              <option value="custom">OpenAI-compatible URL</option>
-            </select></div>
-          <div id="hf-auth"></div>
-        </div>
-        <div id="custom-fields" class="row" hidden>
-          <div class="grow"><label for="base-url">Base URL</label><input id="base-url"></div>
-          <div class="grow"><label for="api-key">API key</label>
-            <input id="api-key" type="password" placeholder="optional"></div>
-        </div>
-        <div class="row">
-          <div class="grow" style="flex:3"><label for="model">Model</label><input id="model"></div>
-          <div class="grow"><label for="max-tokens">Max tokens</label>
-            <input id="max-tokens" type="number" min="1" step="1"></div>
-        </div>
-        <div class="row">
-          <button id="model-step" class="primary">Step model</button>
-          <button id="model-run">Run to end</button>
-          <button id="model-stop" hidden>Stop</button>
-        </div>
-        <div class="hint">The request goes straight from your browser to the endpoint. A local server
-          needs CORS enabled, and an <code>http://</code> URL only works from an
-          <code>http://</code> page or <code>localhost</code>.</div>
-        <div id="model-out" class="msg"></div>
       </section>
     </div>
 

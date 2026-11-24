@@ -3,8 +3,8 @@
 ``BrowserStudio`` is the Python half of the static Hugging Face Space: it runs inside Pyodide,
 keeps one episode, and returns JSON strings (HTML views, a message and the episode state) that
 ``static/app.js`` renders. It imports neither ``gradio``, ``fastmcp`` nor ``httpx``, so the same
-file runs under pytest and in the browser. The model call itself is a ``fetch`` in JavaScript:
-``build_chat_payload`` makes the request body and ``apply_chat_response`` consumes the answer.
+file runs under pytest and in the browser. Manual tool calls and oracle stepping only: model
+stepping needs a model endpoint and lives in the Gradio UI.
 """
 
 from __future__ import annotations
@@ -139,7 +139,6 @@ class BrowserStudio:
             )
             for t in tools
         ]
-        self.oa_tools = agent.openai_tools(self.tools)
         self.episode: Episode | None = None
         self.oracle_i = 0
         self.snapshots: list[dict[str, Any]] = []
@@ -208,11 +207,6 @@ class BrowserStudio:
                     for t in self.tools
                 ],
                 "css": render.STUDIO_CSS,
-                "max_tokens": agent.DEFAULT_MAX_TOKENS,
-                "hf_router_url": agent.HF_ROUTER_URL,
-                "space_model": agent.DEFAULT_SPACE_MODEL,
-                "local_url": agent.DEFAULT_LOCAL_URL,
-                "local_model": agent.DEFAULT_LOCAL_MODEL,
             }
         )
 
@@ -255,47 +249,3 @@ class BrowserStudio:
     def select_step(self, step: Any) -> str:
         self.view_step = int(step)
         return self._out()
-
-    def build_chat_payload(self, model: str, max_tokens: Any) -> str:
-        """The ``/chat/completions`` body for the next model step, or ``{"error": ...}``."""
-        ep, why = self._open_episode()
-        if ep is None:
-            return json.dumps({"error": why})
-        return json.dumps(
-            {
-                "payload": {
-                    "model": model,
-                    "messages": agent.build_messages(ep.task.intent, ep.step_log),
-                    "tools": self.oa_tools,
-                    "tool_choice": "auto",
-                    "temperature": 0.0,
-                    "max_tokens": int(max_tokens),
-                }
-            }
-        )
-
-    def apply_chat_response(self, raw_text: str, http_status: Any, max_tokens: Any) -> str:
-        """Run the tool call in the model's answer. ``http_status`` 0 means the request itself
-        failed (``raw_text`` is the network error)."""
-        ep, why = self._open_episode()
-        if ep is None:
-            return self._out(why or "", ok=False)
-        status = int(http_status)
-        reply: agent.ModelReply
-        if status == 0:
-            reply = agent.ModelReply(
-                error=f"Model request failed: {raw_text}. If the endpoint is local, check that "
-                "it is running and allows cross-origin requests."
-            )
-        elif status >= 400:
-            reply = agent.ModelReply(error=agent.http_error_message(status, raw_text))
-        else:
-            try:
-                reply = agent.parse_chat_response(json.loads(raw_text), int(max_tokens))
-            except ValueError as e:
-                reply = agent.ModelReply(error=f"Invalid JSON from model server: {e}")
-        failure = reply_failure(reply)
-        if failure is not None or reply.tool is None:
-            return self._out(failure or "Model returned no tool call.", ok=False)
-        self._run(reply.tool, reply.args)
-        return self._out(format_model_reply(reply, ep.step_log[-1]))

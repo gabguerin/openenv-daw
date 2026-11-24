@@ -45,13 +45,6 @@ def site(tmp_path_factory):
     return script.build_static_site(tmp_path_factory.mktemp("site") / "static-space")
 
 
-def _chat(tool: str, args: dict | None = None, finish: str = "tool_calls") -> str:
-    call = {"function": {"name": tool, "arguments": json.dumps(args or {})}}
-    return json.dumps(
-        {"choices": [{"finish_reason": finish, "message": {"content": "", "tool_calls": [call]}}]}
-    )
-
-
 def _oracle_reward_env(family: str, seed: int) -> tuple[str, float]:
     env = DawEnvironment()
     env.reset(split="train", family=family, seed=seed)
@@ -98,7 +91,6 @@ def test_actions_before_reset_and_after_done(tools):
     s = BrowserStudio(tools)
     assert json.loads(s.manual("get_session", "{}"))["message"] == "Reset first."
     assert json.loads(s.oracle_step())["ok"] is False
-    assert "error" in json.loads(s.build_chat_payload("m", 64))
     s.reset("train", "(any)", 0, False)
     out = {}
     for _ in range(40):
@@ -107,7 +99,6 @@ def test_actions_before_reset_and_after_done(tools):
             break
     assert out["state"]["done"]
     assert json.loads(s.manual("get_session", "{}"))["message"].startswith("The episode is over")
-    assert json.loads(s.apply_chat_response(_chat("get_session"), 200, 64))["ok"] is False
 
 
 @pytest.mark.parametrize("family", list(families()))
@@ -121,50 +112,6 @@ def test_oracle_reward_matches_server_env(tools, family):
     assert (s.episode.task.task_id, s.episode.score.reward) == _oracle_reward_env(family, 1)
 
 
-def test_model_round_trip(tools):
-    s = BrowserStudio(tools)
-    s.reset("train", "(any)", 0, False)
-    built = json.loads(s.build_chat_payload("my/model", 777))["payload"]
-    assert built["model"] == "my/model" and built["max_tokens"] == 777
-    assert {t["function"]["name"] for t in built["tools"]} == {t["name"] for t in tools}
-    assert built["messages"][0]["role"] == "system" and built["messages"][-1]["role"] == "user"
-
-    out = json.loads(s.apply_chat_response(_chat("get_session"), 200, 777))
-    assert out["ok"] and out["state"]["step_count"] == 1 and "get_session" in out["message"]
-    # the next payload now carries the executed step
-    nxt = json.loads(s.build_chat_payload("my/model", 777))["payload"]["messages"]
-    assert len(nxt) > len(built["messages"])
-
-
-def test_model_failures_are_reported(tools):
-    s = BrowserStudio(tools)
-    s.reset("train", "(any)", 0, False)
-
-    out = json.loads(s.apply_chat_response("Failed to fetch", 0, 64))
-    assert (
-        not out["ok"] and "Failed to fetch" in out["message"] and "CORS" not in out["views"]["log"]
-    )
-    out = json.loads(s.apply_chat_response('{"error": {"message": "nope"}}', 401, 64))
-    assert "HTTP 401" in out["message"] and "nope" in out["message"]
-    assert "Invalid JSON" in json.loads(s.apply_chat_response("<html>", 200, 64))["message"]
-
-    plain = json.dumps({"choices": [{"message": {"content": "I will do it"}}]})
-    assert "no tool call" in json.loads(s.apply_chat_response(plain, 200, 64))["message"]
-
-    cut = json.dumps({"choices": [{"finish_reason": "length", "message": {"content": "<tool"}}]})
-    assert "max_tokens limit (128)" in json.loads(s.apply_chat_response(cut, 200, 128))["message"]
-
-    assert json.loads(s.manual("get_session", "{}"))["state"]["step_count"] == 1  # none executed
-
-
-def test_model_tag_fallback_tool_call(tools):
-    s = BrowserStudio(tools)
-    s.reset("train", "(any)", 0, False)
-    text = '<tool_call>{"name": "get_session", "arguments": {}}</tool_call>'
-    raw = json.dumps({"choices": [{"message": {"content": text}}]})
-    assert json.loads(s.apply_chat_response(raw, 200, 64))["ok"]
-
-
 # --- the bundle ------------------------------------------------------------------------------
 def test_site_files_and_card(site):
     assert {p.name for p in site.iterdir()} == {
@@ -176,9 +123,8 @@ def test_site_files_and_card(site):
     }
     _, front, body = (site / "README.md").read_text().split("---", 2)
     card = yaml.safe_load(front)
-    assert card["sdk"] == "static" and card["hf_oauth"] is True
-    assert "inference-api" in card["hf_oauth_scopes"]
-    assert not {"app_port", "base_path"} & set(card)
+    assert card["sdk"] == "static"
+    assert not {"app_port", "base_path", "hf_oauth", "hf_oauth_scopes"} & set(card)
     assert "DAW Studio" in body
 
     pkg = yaml.safe_load((ROOT / "README.md").read_text().split("---", 2)[1])

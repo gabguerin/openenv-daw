@@ -57,4 +57,5 @@ First release, not yet published. This section describes the current feature set
   and `ableton` for modality and DAW searches.
 - **Static Space**: `scripts/push_static_space.py` builds a free Hugging Face Static Space where
   DAW Studio runs in the browser through Pyodide (`server/ui/static_bridge.py`,
-  `server/ui/static/`), calling models from the browser. The Docker Space is unchanged.
+  `server/ui/static/`) for manual and oracle play; model stepping stays in the Gradio UI and the
+  Docker Space.
