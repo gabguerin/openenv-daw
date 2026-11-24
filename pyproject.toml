@@ -29,6 +29,8 @@ Homepage = "https://github.com/gabguerin/openenv-daw"
 Repository = "https://github.com/gabguerin/openenv-daw"
 Documentation = "https://github.com/gabguerin/openenv-daw/blob/main/docs/design.md"
 Space = "https://huggingface.co/spaces/gabguerin/openenv-daw"
+Dataset = "https://huggingface.co/datasets/gabguerin/openenv-daw-tasks"
+Model = "https://huggingface.co/gabguerin/openenv-daw-lfm3-1.7b-sft"
 
 [project.scripts]
 server = "openenv_daw.server.app:main"

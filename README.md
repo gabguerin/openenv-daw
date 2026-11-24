@@ -217,12 +217,14 @@ optional `OPENENV_DAW_MODEL_KEY`, and `OPENENV_DAW_MODEL_MAX_TOKENS` (`4096`); o
 calls Hugging Face Inference Providers using the visitor's own Sign in with Hugging Face token, so
 inference is billed to the visitor. The
 `space-openenv-daw` workflow runs the same `push`. The image is built on `openenv-base` with
-dependencies from `uv.lock`. To use a deployed Space from Python,
-`pip install git+https://huggingface.co/spaces/<owner>/openenv-daw` and
+dependencies from `uv.lock`. To use a deployed Docker Space from Python (the static Space has no
+server), `pip install git+https://huggingface.co/spaces/<owner>/openenv-daw` and
 `DawEnv.from_env("<owner>/openenv-daw")`.
 
 ## Go further
 
+- [Space (`gabguerin/openenv-daw`)](https://huggingface.co/spaces/gabguerin/openenv-daw):
+  static DAW Studio that runs in your browser (manual and oracle play).
 - [Model weights (`gabguerin/openenv-daw-lfm3-1.7b-sft`)](https://huggingface.co/gabguerin/openenv-daw-lfm3-1.7b-sft):
   fine-tuned `LFM3-1.7B` SFT checkpoint (80.2% on held-out v9).
 - [Task dataset (`gabguerin/openenv-daw-tasks`)](https://huggingface.co/datasets/gabguerin/openenv-daw-tasks):
