@@ -47,7 +47,10 @@ First release, not yet published. This section describes the current feature set
 - **Adapters** (provisional): Change ops, `diff`/`apply_changes`, `Driver`, `IdMap`, `DeviceMap`,
   `MirrorBackend`, `FakeDriver` and conformance helpers in `adapters.testing`.
 - **Web UI and Space**: DAW Studio (`ui` extra), deployed to the Hugging Face Space on
-  `cpu-basic`, image built on `openenv-base` from `uv.lock`.
+  `cpu-basic`, image built on `openenv-base` from `uv.lock`. Includes a "Run a model" card to step
+  or run an episode through an OpenAI-compatible endpoint locally (`OPENENV_DAW_MODEL_URL`,
+  `OPENENV_DAW_MODEL`, `OPENENV_DAW_MODEL_KEY`) or through Hugging Face Inference Providers with
+  Sign in with Hugging Face OAuth on the Space.
 - **Layout**: task templates live in one `server/tasks/templates.yaml`; `openenv-daw mcp` is
   served from `cli.py`.
 - **Discovery**: `discovery.json` for `openenv catalog build`, checked in CI.

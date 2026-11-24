@@ -1,11 +1,11 @@
 """The "DAW Studio" Gradio tab: one private environment per visitor, live checks, manual tool
-calls and oracle stepping. Built through ``create_app(gradio_builder=...)``."""
+calls, oracle stepping and model stepping. Built through ``create_app(gradio_builder=...)``."""
 
 from __future__ import annotations
 
 import json
 import random
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import gradio as gr
@@ -15,7 +15,7 @@ from openenv_daw.server.rewards.score import score_episode
 from openenv_daw.server.sim.session import Session as SessionModel
 from openenv_daw.server.tasks.generators import families
 
-from . import render
+from . import agent, render
 
 
 def skeleton(schema: dict[str, Any]) -> str:
@@ -116,6 +116,44 @@ async def _call(sess: Session, tool: str, args: dict[str, Any]) -> None:
     sess.view_step = None
 
 
+def _format_model_reply(reply: agent.ModelReply, last: dict[str, Any]) -> str:
+    parts: list[str] = []
+    if reply.text:
+        parts.append(reply.text)
+    parts.append(f"`{reply.tool}`\n```json\n{json.dumps(reply.args, indent=2)}\n```")
+    parts.append("```json\n" + json.dumps(last["result"], indent=1)[:4000] + "\n```")
+    return "\n\n".join(parts)
+
+
+async def step_with_model(
+    sess: Session,
+    cfg: agent.ModelConfig,
+    oa_tools: list[dict[str, Any]],
+    *,
+    caller: Callable[
+        [agent.ModelConfig, list[dict[str, Any]], list[dict[str, Any]]],
+        Awaitable[agent.ModelReply],
+    ] = agent.next_call,
+) -> tuple[bool, str]:
+    """Ask the configured model for one tool call and execute it in ``sess``."""
+    ep = sess.env.episode
+    if ep is None:
+        return False, "Reset first."
+    if ep.done:
+        return False, "The episode is over; reset."
+    messages = agent.build_messages(ep.task.intent, ep.step_log)
+    reply = await caller(cfg, messages, oa_tools)
+    if reply.error:
+        return False, reply.error
+    if reply.tool is None:
+        if reply.text:
+            return False, f"Model returned no tool call:\n\n{reply.text}"
+        return False, "Model returned no tool call."
+    await _call(sess, reply.tool, reply.args)
+    last = ep.step_log[-1]
+    return True, _format_model_reply(reply, last)
+
+
 def build_daw_studio(
     web_manager: Any,
     action_fields: Any,
@@ -130,8 +168,11 @@ def build_daw_studio(
     tools = probe.step(ListToolsAction()).tools  # type: ignore[attr-defined]
     schemas = {t.name: t.input_schema for t in tools}
     descriptions = {t.name: (t.description or "") for t in tools}
+    oa_tools = agent.openai_tools(tools)
     probe.close()
     fams = ["(any)", *families()]
+    on_space = agent.is_space()
+    defaults = agent.default_config()
 
     def new_session() -> Session:
         return Session(env_factory())
@@ -149,7 +190,7 @@ def build_daw_studio(
         sess.env.reset(**kw)
         sess.oracle_i = 0
         sess.snapshots, sess.view_step = [], None
-        return (sess, *_views(sess), "", kw["seed"])
+        return (sess, *_views(sess), "", "", kw["seed"])
 
     def random_task(sess, split, family, number):
         return reset(sess, split, family, number, True)
@@ -194,6 +235,71 @@ def build_daw_studio(
         await _call(sess, st.tool, st.args)
         return (sess, *_views(sess), f"oracle: `{st.tool}`")
 
+    def _resolve_cfg(
+        url: str, model: str, key: str, oauth_token: gr.OAuthToken | None
+    ) -> tuple[agent.ModelConfig | None, str | None]:
+        if on_space:
+            if oauth_token is None or not oauth_token.token:
+                return None, "Sign in with Hugging Face first."
+            return (
+                agent.ModelConfig(
+                    base_url=agent.HF_ROUTER_URL,
+                    model=(model or "").strip() or defaults.model,
+                    api_key=oauth_token.token,
+                ),
+                None,
+            )
+        return (
+            agent.ModelConfig(
+                base_url=(url or "").strip() or defaults.base_url,
+                model=(model or "").strip() or defaults.model,
+                api_key=(key or "").strip(),
+            ),
+            None,
+        )
+
+    async def model_step(
+        sess: Session | None,
+        url: str,
+        model: str,
+        key: str,
+        oauth_token: gr.OAuthToken | None = None,
+    ):
+        sess = need(sess)
+        cfg, err = _resolve_cfg(url, model, key, oauth_token)
+        if err is not None or cfg is None:
+            return (sess, *_views(sess), err or "Missing model configuration.")
+        _, msg = await step_with_model(sess, cfg, oa_tools)
+        return (sess, *_views(sess), msg)
+
+    async def model_run(
+        sess: Session | None,
+        url: str,
+        model: str,
+        key: str,
+        oauth_token: gr.OAuthToken | None = None,
+    ):
+        sess = need(sess)
+        cfg, err = _resolve_cfg(url, model, key, oauth_token)
+        if err is not None or cfg is None:
+            yield (sess, *_views(sess), err or "Missing model configuration.")
+            return
+        ep = sess.env.episode
+        if ep is None:
+            yield (sess, *_views(sess), "Reset first.")
+            return
+        if ep.done:
+            yield (sess, *_views(sess), "The episode is over; reset.")
+            return
+        for _ in range(ep.max_steps):
+            ep = sess.env.episode
+            if ep is None or ep.done:
+                break
+            ok, msg = await step_with_model(sess, cfg, oa_tools)
+            yield (sess, *_views(sess), msg)
+            if not ok:
+                break
+
     step_js = (
         "element.addEventListener('click', e => { const r = e.target.closest('[data-step]');"
         " if (r) trigger('click', {step: r.dataset.step}); });"
@@ -201,7 +307,8 @@ def build_daw_studio(
     header = (
         '<div class="oe-header"><span class="oe-eyebrow">openenv_daw · MCP environment</span>'
         "<h1>DAW</h1><p>A tool-use environment for music production: edit a project with "
-        "portable DAW tools and get scored on the result.</p></div>"
+        "portable DAW tools — manually, with the oracle, or with a model — and get scored on "
+        "the result.</p></div>"
     )
     with gr.Blocks(title=title) as demo:
         state = gr.State(None, time_to_live=3600, delete_callback=lambda s: s and s.close())
@@ -244,6 +351,42 @@ def build_daw_studio(
                     run_btn = gr.Button("Run", variant="primary")
                     step_btn = gr.Button("Step oracle")
                     result = gr.Markdown()
+                with gr.Column(elem_classes="oe-card"):
+                    gr.HTML(
+                        '<div class="oe-step"><h2>3. Run a model</h2>'
+                        "<p>Ask a model for the next tool call and run it.</p></div>"
+                    )
+                    if on_space:
+                        gr.LoginButton()
+                        model_name = gr.Textbox(
+                            value=defaults.model,
+                            label="Model",
+                            placeholder=agent.DEFAULT_SPACE_MODEL,
+                        )
+                        model_url: Any = gr.State(agent.HF_ROUTER_URL)
+                        model_key: Any = gr.State("")
+                    else:
+                        with gr.Accordion("Model endpoint", open=False):
+                            model_url = gr.Textbox(
+                                value=defaults.base_url,
+                                label="Base URL",
+                                placeholder=agent.DEFAULT_LOCAL_URL,
+                            )
+                            model_name = gr.Textbox(
+                                value=defaults.model,
+                                label="Model",
+                                placeholder=agent.DEFAULT_LOCAL_MODEL,
+                            )
+                            model_key = gr.Textbox(
+                                value=defaults.api_key,
+                                label="API key",
+                                type="password",
+                                placeholder="optional",
+                            )
+                    with gr.Row():
+                        model_step_btn = gr.Button("Step model", variant="primary")
+                        model_run_btn = gr.Button("Run to end")
+                    model_out = gr.Markdown()
             with gr.Column(scale=2, min_width=320):
                 with gr.Column(elem_classes=["oe-card", "ds-epsec"]):
                     log = gr.HTML(js_on_load=step_js)
@@ -252,12 +395,20 @@ def build_daw_studio(
                         checks = gr.HTML()
         views = [task_card, arrangement, reward, checks, log]
         outs = [state, *views, result]
+        model_inputs = [state, model_url, model_name, model_key]
+        model_outs = [state, *views, model_out]
         free: dict[str, Any] = {"concurrency_limit": None}
         demo.load(init, state, [state, *views], **free)
-        reset_btn.click(reset, [state, split, family, number], [*outs, number], **free)
-        random_btn.click(random_task, [state, split, family, number], [*outs, number], **free)
+        reset_btn.click(
+            reset, [state, split, family, number], [*outs, model_out, number], **free
+        )
+        random_btn.click(
+            random_task, [state, split, family, number], [*outs, model_out, number], **free
+        )
         tool.change(pick_tool, tool, [args, tool_doc], **free)
         run_btn.click(manual, [state, tool, args], outs, **free)
         step_btn.click(oracle_step, state, outs, **free)
+        model_step_btn.click(model_step, model_inputs, model_outs, **free)
+        model_run_btn.click(model_run, model_inputs, model_outs, **free)
         log.click(select_step, state, [state, *views], **free)
     return demo

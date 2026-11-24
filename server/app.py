@@ -17,9 +17,13 @@ def _factory() -> DawEnvironment:
     return DawEnvironment(backend_factory=resolve_backend(backend) if backend else None)
 
 
+def _web_enabled() -> bool:
+    return os.getenv("ENABLE_WEB_INTERFACE", "false").lower() in ("true", "1", "yes")
+
+
 def _ui_kwargs() -> dict:
     """The Studio tab is only built (and gradio only imported) when the web interface is on."""
-    if os.getenv("ENABLE_WEB_INTERFACE", "false").lower() not in ("true", "1", "yes"):
+    if not _web_enabled():
         return {}
     from openenv_daw.server.ui.studio import build_daw_studio
 
@@ -41,6 +45,13 @@ app = create_app(
     reset_observation_cls=DawResetObservation,
     **_ui_kwargs(),
 )
+
+# Gradio's LoginButton navigates to /login/huggingface and /logout at the root, and HF OAuth
+# posts back to /login/callback; attach them to the root app when Gradio is mounted under /web.
+if _web_enabled() and os.getenv("SPACE_ID"):
+    from gradio.oauth import attach_oauth
+
+    attach_oauth(app)
 
 
 def main() -> None:
